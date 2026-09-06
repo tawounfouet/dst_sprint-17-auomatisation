@@ -1,0 +1,14 @@
+Static validation generated: 2026-09-06T13:18:11+00:00
+Project root: /mnt/data/ansible_final_exam/191 - Ansible DevOps/Projet_Final/ansible-project
+[OK] ansible.cfg
+[OK] requirements.yml
+[OK] playbooks/site.yml
+[OK] playbooks/validate.yml
+[OK] roles/mysql/tasks/main.yml
+[OK] roles/prestashop/tasks/main.yml
+[OK] inventories/prod/hosts.example.yml
+[OK] inventories/prod/group_vars/vault.example.yml
+[INFO] Ansible runtime syntax-check skipped: ansible-playbook or local inventory unavailable
+[OK] YAML parsed: 16 files
+[INFO] ansible executable present: no
+[INFO] Runtime deployment not executed in this environment.
