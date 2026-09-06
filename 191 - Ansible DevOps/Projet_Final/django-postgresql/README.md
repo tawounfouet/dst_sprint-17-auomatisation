@@ -5,16 +5,18 @@ Second projet applicatif complet du module 191. Il complète le projet PrestaSho
 ## Statut
 
 ```text
-IMPLEMENTATION      ✅
-STATIC GATE         ✅
-E2E                 ✅ GREEN
-IDEMPOTENCE         ✅ app1 changed=0 / db1 changed=0
-PACKAGE             ✅ ZIP + SHA-256
-ARTIFACT            ✅ GitHub Actions
-FINAL REPORT        ✅
+IMPLEMENTATION           ✅
+STATIC GATE              ✅
+E2E TWO-HOST             ✅ GREEN
+E2E MONO-HOST            ✅ GREEN
+IDEMPOTENCE TWO-HOST     ✅ app1 changed=0 / db1 changed=0
+IDEMPOTENCE MONO-HOST    ✅ server1 changed=0
+PACKAGE                  ✅ ZIP + SHA-256
+ARTIFACTS                ✅ GitHub Actions
+FINAL REPORTS            ✅
 ```
 
-Référence finale :
+### Qualification historique à deux hôtes
 
 ```text
 Workflow : Ansible Django PostgreSQL E2E Final
@@ -23,21 +25,59 @@ Commit   : 2855c8f4daad1b8d962a576279ed7fd1c32dcb46
 Artifact : 9994995760
 ```
 
-Le rapport canonique est [`E2E_QUALIFICATION_REPORT.md`](./E2E_QUALIFICATION_REPORT.md).
+Rapport : [`E2E_QUALIFICATION_REPORT.md`](./E2E_QUALIFICATION_REPORT.md).
 
-> La qualification E2E concerne le harness CI documenté : deux cibles Ubuntu 24.04 isolées pilotées par Ansible via `community.docker.docker`. Elle ne doit pas être présentée comme une qualification de production publique par SSH.
-
-## Architecture
+### Qualification mono-serveur
 
 ```text
-Client ──HTTP :80──► Nginx ──► Gunicorn 127.0.0.1:8000 ──► Django
-                                                              │
-                                                              │ psycopg
-                                                              ▼
-                                                       PostgreSQL :5432
+Workflow : Ansible Django PostgreSQL Mono-Host Qualification
+Run      : #1 / 34057563053
+Commit   : de3aa3ef4cf1843271722b65d27691fba78392ae
+Artifact : 9996481488
 ```
 
-Deux hôtes sont ciblés : `app1` pour Nginx/Gunicorn/Django et `db1` pour PostgreSQL.
+Rapport : [`MONOHOST_E2E_QUALIFICATION_REPORT.md`](./MONOHOST_E2E_QUALIFICATION_REPORT.md).
+
+> Les deux qualifications utilisent des cibles Ubuntu 24.04 isolées dans GitHub Actions, pilotées via `community.docker.docker`. Elles ne doivent pas être présentées comme une qualification de production publique via SSH.
+
+## Architectures qualifiées
+
+### Deux hôtes
+
+```text
+Client ──HTTP :80──► app1
+                    Nginx
+                      ↓
+                    Gunicorn 127.0.0.1:8000
+                      ↓
+                    Django
+                      │
+                      │ psycopg / TCP 5432
+                      ▼
+                    db1
+                    PostgreSQL
+```
+
+### Mono-serveur
+
+```text
+Internet / client
+       │
+       ▼
+┌─────────────────────────────────┐
+│ server1                         │
+│                                 │
+│ Nginx            :80            │
+│      ↓                          │
+│ Gunicorn         127.0.0.1:8000 │
+│      ↓                          │
+│ Django                          │
+│      ↓                          │
+│ PostgreSQL       127.0.0.1:5432 │
+└─────────────────────────────────┘
+```
+
+La topologie mono-serveur correspond à la cible prévue pour une future VPS unique : Nginx exposé, Gunicorn et PostgreSQL strictement internes à la machine.
 
 ## Rôles
 
@@ -45,6 +85,8 @@ Deux hôtes sont ciblés : `app1` pour Nginx/Gunicorn/Django et `db1` pour Postg
 - `postgresql` : serveur DB, base et utilisateur applicatif ;
 - `django_app` : utilisateur système, code, **Python `venv` nommé `.venv`**, migrations, collectstatic et Gunicorn/systemd ;
 - `nginx` : reverse proxy et fichiers statiques.
+
+Les mêmes quatre rôles sont réutilisés dans les deux topologies.
 
 ## Contrats fonctionnels
 
@@ -58,6 +100,24 @@ GET /api/info/
 ```
 
 `/health/database/` exécute un vrai `SELECT 1` via Django et psycopg afin de qualifier la chaîne applicative jusqu'à PostgreSQL.
+
+## Qualification réseau mono-host
+
+La CI mono-serveur vérifie explicitement depuis le runner :
+
+```text
+server1:80   reachable=true
+server1:8000 reachable=false
+server1:5432 reachable=false
+```
+
+Le contrat cible est donc :
+
+```text
+Nginx       public/exposé
+Gunicorn    localhost-only
+PostgreSQL  localhost-only
+```
 
 ## Quick start
 
@@ -76,40 +136,24 @@ ansible-vault encrypt inventories/prod/group_vars/vault.yml
 ./scripts/package.sh
 ```
 
-## Qualification finale
+Pour reproduire la qualification mono-host dans l'environnement CI prévu :
 
-La chaîne de qualification est :
-
-```text
-static checks
-      ↓
-first site.yml
-      ↓
-runtime + HTTP + Django → PostgreSQL
-      ↓
-second site.yml
-      ↓
-changed=0 sur app1 et db1
-      ↓
-runtime post-idempotence
-      ↓
-ZIP
-      ↓
-SHA-256
-      ↓
-package safety gate
-      ↓
-GitHub Actions artifact
+```bash
+bash ansible-project/tests/e2e/run_monohost_qualification.sh
 ```
 
-Archive projet du run final :
+## Package mono-host qualifié
+
+Archive du run mono-host de référence :
 
 ```text
-django-postgresql-ansible-20260906-184304.zip
+django-postgresql-ansible-20260906-202147.zip
 ```
 
-SHA-256 :
+SHA-256 du ZIP projet :
 
 ```text
-022740bacb16ebdd0bd9edbf04fe568fddd550079db9e5a9f5c08edfe378c664
+9ad407e6e1b1a6cd892c62a302a20d0907f60625ecc3240446fc65821624bc11
 ```
+
+L'étape suivante pour une qualification réellement production-like est l'exécution sur **une VPS Ubuntu 24.04 distante via SSH**, avec firewall réel, DNS, HTTPS/Let's Encrypt, reboot/restart et sauvegarde/restauration PostgreSQL.
