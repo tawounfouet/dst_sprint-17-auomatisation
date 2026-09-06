@@ -1,0 +1,100 @@
+name: Ansible Django PostgreSQL Mono-Host Qualification
+
+on:
+  push:
+    branches:
+      - feat/ansible-django-postgresql-project
+    paths:
+      - '191 - Ansible DevOps/Projet_Final/django-postgresql/**'
+      - '.github/workflows/ansible-django-postgresql-monohost-qualification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monohost-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PROJECT_DIR: 191 - Ansible DevOps/Projet_Final/django-postgresql/ansible-project
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ansible E2E dependencies
+        run: |
+          python -m pip install 'ansible-core>=2.17,<2.21' docker PyYAML
+          cd "$PROJECT_DIR"
+          ansible-galaxy collection install -r requirements.yml
+          ansible-galaxy collection install -r requirements-e2e.yml
+
+      - name: Run mono-host E2E qualification
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: bash tests/e2e/run_monohost_qualification.sh
+
+      - name: Build and verify qualified package
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -Eeuo pipefail
+          PACKAGE_DIR="$RUNNER_TEMP/ansible-django-postgresql-monohost-package"
+          mkdir -p "$PACKAGE_DIR"
+          export PACKAGE_OUTPUT_DIR="$PACKAGE_DIR"
+
+          bash scripts/package.sh | tee "$PACKAGE_DIR/package.log"
+
+          ARCHIVE="$(find "$PACKAGE_DIR" -maxdepth 1 -type f -name 'django-postgresql-ansible-*.zip' -print -quit)"
+          test -n "$ARCHIVE"
+          CHECKSUM="$ARCHIVE.sha256"
+          test -f "$CHECKSUM"
+
+          sha256sum -c "$CHECKSUM"
+          bash tests/package_safety_check.sh "$ARCHIVE"
+
+          PACKAGE_SHA="$(awk '{print $1}' "$CHECKSUM")"
+          EVIDENCE_DIR="../evidence/validation"
+          MANIFEST="$EVIDENCE_DIR/monohost-final-ci-${GITHUB_RUN_ID}.txt"
+          {
+            echo "workflow=Ansible Django PostgreSQL Mono-Host Qualification"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "git_sha=${GITHUB_SHA}"
+            echo "topology=single-server"
+            echo "inventory_host=server1"
+            echo "roles=common,postgresql,django_app,nginx"
+            echo "postgresql=127.0.0.1:5432"
+            echo "gunicorn=127.0.0.1:8000"
+            echo "nginx=0.0.0.0:80"
+            echo "idempotence_server1=changed=0"
+            echo "archive=$(basename "$ARCHIVE")"
+            echo "sha256=${PACKAGE_SHA}"
+          } | tee "$MANIFEST"
+
+          echo "PACKAGE_DIR=$PACKAGE_DIR" >> "$GITHUB_ENV"
+          echo "QUALIFIED_ARCHIVE=$(basename "$ARCHIVE")" >> "$GITHUB_ENV"
+          echo "QUALIFIED_SHA256=$PACKAGE_SHA" >> "$GITHUB_ENV"
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-django-postgresql-monohost-failure-${{ github.run_id }}
+          path: |
+            191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/logs/*
+            191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/validation/*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload qualified mono-host project and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-django-postgresql-monohost-qualified-${{ github.run_id }}
+          path: |
+            ${{ env.PACKAGE_DIR }}/*
+            191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/logs/*.txt
+            191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/validation/*
+          if-no-files-found: error
+          retention-days: 14
