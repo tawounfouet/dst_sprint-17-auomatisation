@@ -1,0 +1,14 @@
+variable "project_name" { type = string }
+variable "environment" { type = string }
+variable "resource_group" { type = string }
+variable "location" { type = string }
+variable "delegated_subnet_id" { type = string }
+variable "private_dns_zone_id" { type = string }
+variable "sku_name" { type = string }
+variable "primary_zone" { type = string }
+variable "standby_zone" { type = string }
+variable "enable_ha" { type = bool }
+variable "admin_username" { type = string }
+variable "database_name" { type = string }
+variable "storage_gb" { type = number }
+variable "tags" { type = map(string) }
