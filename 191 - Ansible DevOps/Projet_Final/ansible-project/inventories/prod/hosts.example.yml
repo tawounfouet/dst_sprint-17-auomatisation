@@ -1,0 +1,9 @@
+---
+all:
+  children:
+    web:
+      hosts:
+        web1:
+    database:
+      hosts:
+        db1:

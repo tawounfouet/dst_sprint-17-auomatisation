@@ -1,0 +1,12 @@
+.vault_pass
+*.pem
+*.key
+*.retry
+.ansible/
+__pycache__/
+*.pyc
+inventories/prod/hosts.yml
+inventories/prod/host_vars/web1.yml
+inventories/prod/host_vars/db1.yml
+inventories/prod/group_vars/vault.yml
+exam-final-*.zip

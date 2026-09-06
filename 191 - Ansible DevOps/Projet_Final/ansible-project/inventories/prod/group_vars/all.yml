@@ -1,0 +1,18 @@
+---
+mysql_database_name: prestashop
+mysql_application_user: prestashop_app
+mysql_app_host: "%"
+mysql_bind_address: "0.0.0.0"
+mysql_port: 3306
+
+prestashop_version: "9.0.3-3.0"
+prestashop_download_url: "https://assets.prestashop3.com/dst/edition/corporate/9.0.3-3.0/prestashop_edition_basic_version_9.0.3-3.0.zip"
+prestashop_install_dir: /var/www/prestashop
+prestashop_domain: "{{ ansible_host | default(inventory_hostname) }}"
+prestashop_db_host: "{{ hostvars[groups['database'][0]].ansible_host | default(groups['database'][0]) }}"
+prestashop_db_port: 3306
+prestashop_db_prefix: ps_
+prestashop_language: fr
+prestashop_country: fr
+prestashop_admin_email: admin@example.invalid
+apache_service_name: apache2
