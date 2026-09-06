@@ -1,0 +1,20 @@
+subscription_id = "00000000-0000-0000-0000-000000000000"
+ssh_public_key = "ssh-ed25519 AAAA... replace-with-your-public-key"
+
+location     = "francecentral"
+project_name = "dst-s17-wordpress"
+environment  = "dev"
+
+# Laisser null pour ne pas ouvrir SSH.
+ssh_cidr = null
+
+# Bonus pédagogique HTTPS auto-signé.
+enable_https = false
+
+# Pour réduire le coût d'un lab, la HA peut être désactivée.
+mysql_enable_ha = true
+
+# Tags complémentaires optionnels.
+tags = {
+  Owner = "Thomas"
+}
