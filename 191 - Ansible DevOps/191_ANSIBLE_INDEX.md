@@ -8,7 +8,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 
 | Ordre | Document | Statut |
 |---:|---|---|
-| 1 | `191.01_ANSIBLE_INTRODUCTION_ET_INSTALLATION.md` | ⏳ À produire |
+| 1 | `191.01_ANSIBLE_INTRODUCTION_ET_INSTALLATION.md` | ✅ Canonique |
 | 2 | `191.02_ANSIBLE_MODULES_ET_COMMANDES_AD_HOC.md` | ⏳ À produire |
 | 3 | `191.03_ANSIBLE_INVENTAIRES.md` | ⏳ À produire |
 | 4 | `191.04_ANSIBLE_PLAYBOOKS.md` | ⏳ À produire |
@@ -102,9 +102,9 @@ Les ressources historiques ne sont pas considérées comme documentation active.
           ↓
 [2] Lab Multipass                       ✅
           ↓
-[3] 191.01                              ⏭️ NEXT
+[3] 191.01                              ✅
           ↓
-[4] 191.02 + Lab 02
+[4] 191.02 + Lab 02                     ⏭️ NEXT
           ↓
 [5] 191.03 + Lab 03
           ↓
