@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec > >(tee -a /var/log/wordpress-bootstrap.log) 2>&1
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update -y
+apt-get install -y \
+  apache2 \
+  awscli \
+  curl \
+  jq \
+  openssl \
+  php \
+  libapache2-mod-php \
+  php-curl \
+  php-gd \
+  php-intl \
+  php-mbstring \
+  php-mysql \
+  php-soap \
+  php-xml \
+  php-zip
+
+systemctl enable --now apache2
+a2enmod rewrite
+
+# Attendre que le secret maître RDS soit lisible. Le mot de passe n'est jamais
+# écrit dans le code Terraform ni affiché dans les logs du bootstrap.
+DB_PASSWORD=""
+for attempt in $(seq 1 30); do
+  SECRET_JSON=$(aws secretsmanager get-secret-value \
+    --region "${region}" \
+    --secret-id "${db_secret_arn}" \
+    --query SecretString \
+    --output text 2>/dev/null || true)
+
+  if [ -n "$SECRET_JSON" ] && [ "$SECRET_JSON" != "None" ]; then
+    DB_PASSWORD=$(printf '%s' "$SECRET_JSON" | jq -r '.password')
+    if [ -n "$DB_PASSWORD" ] && [ "$DB_PASSWORD" != "null" ]; then
+      break
+    fi
+  fi
+
+  sleep 10
+done
+
+if [ -z "$DB_PASSWORD" ]; then
+  echo "Impossible de récupérer le secret RDS après plusieurs tentatives." >&2
+  exit 1
+fi
+
+rm -f /var/www/html/index.html
+curl -fsSL https://wordpress.org/latest.tar.gz -o /tmp/wordpress.tar.gz
+mkdir -p /tmp/wordpress
+ tar -xzf /tmp/wordpress.tar.gz -C /tmp
+cp -a /tmp/wordpress/. /var/www/html/
+
+AUTH_KEY=$(openssl rand -hex 32)
+SECURE_AUTH_KEY=$(openssl rand -hex 32)
+LOGGED_IN_KEY=$(openssl rand -hex 32)
+NONCE_KEY=$(openssl rand -hex 32)
+AUTH_SALT=$(openssl rand -hex 32)
+SECURE_AUTH_SALT=$(openssl rand -hex 32)
+LOGGED_IN_SALT=$(openssl rand -hex 32)
+NONCE_SALT=$(openssl rand -hex 32)
+
+cat > /var/www/html/wp-config.php <<EOF
+<?php
+define('DB_NAME', '${db_name}');
+define('DB_USER', '${db_username}');
+define('DB_PASSWORD', '$DB_PASSWORD');
+define('DB_HOST', '${db_endpoint}:3306');
+define('DB_CHARSET', 'utf8mb4');
+define('DB_COLLATE', '');
+
+define('AUTH_KEY',         '$AUTH_KEY');
+define('SECURE_AUTH_KEY',  '$SECURE_AUTH_KEY');
+define('LOGGED_IN_KEY',    '$LOGGED_IN_KEY');
+define('NONCE_KEY',        '$NONCE_KEY');
+define('AUTH_SALT',        '$AUTH_SALT');
+define('SECURE_AUTH_SALT', '$SECURE_AUTH_SALT');
+define('LOGGED_IN_SALT',   '$LOGGED_IN_SALT');
+define('NONCE_SALT',       '$NONCE_SALT');
+
+\$table_prefix = 'wp_';
+define('WP_DEBUG', false);
+
+if (!defined('ABSPATH')) {
+    define('ABSPATH', __DIR__ . '/');
+}
+require_once ABSPATH . 'wp-settings.php';
+EOF
+
+chown -R www-data:www-data /var/www/html
+find /var/www/html -type d -exec chmod 755 {} \;
+find /var/www/html -type f -exec chmod 644 {} \;
+
+# Le volume EBS additionnel est créé par un module séparé après l'EC2.
+# Le bootstrap attend son apparition puis le monte pour persister les uploads.
+ROOT_SOURCE=$(readlink -f "$(findmnt -n -o SOURCE /)" || true)
+ROOT_DISK=$(lsblk -ndo PKNAME "$ROOT_SOURCE" 2>/dev/null | head -n 1 || true)
+EXTRA_DEVICE=""
+
+for attempt in $(seq 1 60); do
+  while read -r disk_name disk_type; do
+    if [ "$disk_type" = "disk" ] && [ "$disk_name" != "$ROOT_DISK" ]; then
+      EXTRA_DEVICE="/dev/$disk_name"
+      break
+    fi
+  done < <(lsblk -dn -o NAME,TYPE)
+
+  if [ -n "$EXTRA_DEVICE" ] && [ -b "$EXTRA_DEVICE" ]; then
+    break
+  fi
+
+  sleep 5
+done
+
+if [ -n "$EXTRA_DEVICE" ] && [ -b "$EXTRA_DEVICE" ]; then
+  if ! blkid "$EXTRA_DEVICE" >/dev/null 2>&1; then
+    mkfs.ext4 -F "$EXTRA_DEVICE"
+  fi
+
+  mkdir -p /var/www/html/wp-content/uploads
+  DEVICE_UUID=$(blkid -s UUID -o value "$EXTRA_DEVICE")
+
+  if ! grep -q "$DEVICE_UUID" /etc/fstab; then
+    echo "UUID=$DEVICE_UUID /var/www/html/wp-content/uploads ext4 defaults,nofail 0 2" >> /etc/fstab
+  fi
+
+  mount /var/www/html/wp-content/uploads || mount -a
+  chown -R www-data:www-data /var/www/html/wp-content/uploads
+else
+  echo "Aucun volume EBS additionnel détecté pendant la fenêtre d'attente." >&2
+fi
+
+if [ "${enable_https}" = "true" ]; then
+  a2enmod ssl
+
+  openssl req -x509 -nodes -days 365 \
+    -newkey rsa:2048 \
+    -keyout /etc/ssl/private/wordpress-selfsigned.key \
+    -out /etc/ssl/certs/wordpress-selfsigned.crt \
+    -subj "/CN=$(hostname -f)"
+
+  cat > /etc/apache2/sites-available/wordpress-ssl.conf <<'EOF'
+<VirtualHost *:443>
+    DocumentRoot /var/www/html
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/wordpress-selfsigned.crt
+    SSLCertificateKeyFile /etc/ssl/private/wordpress-selfsigned.key
+
+    <Directory /var/www/html>
+        AllowOverride All
+        Require all granted
+    </Directory>
+</VirtualHost>
+EOF
+
+  a2ensite wordpress-ssl
+fi
+
+systemctl restart apache2
+
+echo "Bootstrap WordPress terminé."
