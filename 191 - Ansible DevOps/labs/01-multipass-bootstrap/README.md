@@ -13,85 +13,77 @@
                               │
                           Multipass
                               │
-          ┌───────────────────┼───────────────────┐
-          │                   │                   │
-          ▼                   ▼                   ▼
-  ansible-master          cible1              cible2              cible3
-  Ubuntu 24.04            Ubuntu 24.04         Ubuntu 24.04         Ubuntu 24.04
-  Control Node            Managed Node         Managed Node         Managed Node
-          │                   ▲                   ▲                   ▲
-          └───────────────────┴───────────────────┴───────────────────┘
-                               SSH
+       ┌──────────────────────┼──────────────────────┐
+       │                      │                      │
+       ▼                      ▼                      ▼
+ansible-master             cible1                 cible2                 cible3
+Ubuntu 24.04               Ubuntu 24.04           Ubuntu 24.04           Ubuntu 24.04
+Control Node               Managed Node           Managed Node           Managed Node
+       │                      ▲                      ▲                      ▲
+       └──────────────────────┴──────────────────────┴──────────────────────┘
+                                  SSH
 ```
 
 Le nœud `ansible-master` exécute les commandes Ansible. Les machines `cible1`, `cible2` et `cible3` sont pilotées à distance via SSH.
+
+Ce lab reprend l'adaptation Multipass du cours DataScientest, avec une différence volontaire de sécurité : **aucun mot de passe n'est versionné**. L'accès Ansible aux cibles est préparé par clé SSH.
 
 ---
 
 ## 2. Prérequis
 
-Installer Multipass sur la machine hôte :
-
-- macOS
-- Linux
-- Windows
-
-Vérifier l'installation :
+Installer Multipass sur la machine hôte puis vérifier :
 
 ```bash
 multipass version
-```
-
-Puis contrôler les éventuelles VMs existantes :
-
-```bash
 multipass list
 ```
 
 ---
 
-## 3. Préparer le cloud-init
-
-Le fichier versionné `config.yaml` contient volontairement un mot de passe factice :
+## 3. Fichiers du lab
 
 ```text
-CHANGE_ME_BEFORE_LAUNCH
+01-multipass-bootstrap/
+├── README.md
+├── .gitignore
+├── ansible.cfg
+├── config.yaml
+└── scripts/
+    └── instance_state.py
 ```
 
-Ne versionnez pas de mot de passe réel dans Git.
+Rôle des fichiers :
 
-Créez une copie locale :
-
-```bash
-cp config.yaml config.local.yaml
-```
-
-Puis remplacez `CHANGE_ME_BEFORE_LAUNCH` par un mot de passe de lab dans **`config.local.yaml` uniquement**.
-
-Le fichier local est ignoré par `.gitignore`.
+| Fichier | Rôle |
+|---|---|
+| `config.yaml` | cloud-init commun aux 4 VMs ; crée l'utilisateur `datascientest` sans secret Git |
+| `ansible.cfg` | configuration minimale du lab Ansible |
+| `scripts/instance_state.py` | inventaire visuel des VMs Multipass actives |
+| `.gitignore` | bloque clés privées, `.env`, Vault password et artefacts locaux |
 
 ---
 
 ## 4. Créer les quatre VMs
 
-Depuis le répertoire de ce lab :
+Depuis le répertoire du lab sur la machine hôte :
 
 ```bash
-multipass launch 24.04 --name ansible-master --cloud-init config.local.yaml
-multipass launch 24.04 --name cible1 --cloud-init config.local.yaml
-multipass launch 24.04 --name cible2 --cloud-init config.local.yaml
-multipass launch 24.04 --name cible3 --cloud-init config.local.yaml
+multipass launch 24.04 --name ansible-master --cloud-init config.yaml
+multipass launch 24.04 --name cible1 --cloud-init config.yaml
+multipass launch 24.04 --name cible2 --cloud-init config.yaml
+multipass launch 24.04 --name cible3 --cloud-init config.yaml
 ```
 
 Le téléchargement de l'image Ubuntu peut prendre quelques minutes lors du premier lancement.
 
-Vérifiez ensuite l'état des machines :
+Vérifiez ensuite :
 
 ```bash
 multipass list
 ```
 
-Exemple de topologie obtenue :
+Exemple de topologie :
 
 ```text
 Name             State    IPv4             Image
@@ -101,20 +93,39 @@ cible2           Running  192.168.2.7      Ubuntu 24.04 LTS
 cible3           Running  192.168.2.8      Ubuntu 24.04 LTS
 ```
 
-> Les adresses IP sont des exemples. Utilisez toujours les IP réellement retournées par `multipass list`.
+> Les IP ci-dessus sont des exemples. Les adresses réellement attribuées par Multipass font foi.
 
 ---
 
-## 5. Se connecter au master
+## 5. Vérifier les VMs avec le script Python
+
+Depuis la machine hôte, où le binaire `multipass` est disponible :
+
+```bash
+python3 scripts/instance_state.py
+```
+
+Le script affiche les VMs `Running` avec :
+
+- leur nom ;
+- leur état ;
+- leur première IPv4 ;
+- leur release Ubuntu.
+
+Il remplace dans le lab local le script AWS/Boto3 du cours original.
+
+---
+
+## 6. Se connecter au master
 
 ```bash
 multipass shell ansible-master
 ```
 
-Puis basculez sur l'utilisateur du cours :
+La commande ouvre normalement une session avec l'utilisateur Multipass par défaut. Basculez ensuite sur l'utilisateur pédagogique créé par `config.yaml` :
 
 ```bash
-su - datascientest
+sudo -iu datascientest
 whoami
 ```
 
@@ -126,7 +137,7 @@ datascientest
 
 ---
 
-## 6. Installer Ansible sur le master
+## 7. Installer Ansible sur le master
 
 Sur `ansible-master` :
 
@@ -150,50 +161,76 @@ Le chemin attendu est généralement :
 
 ---
 
-## 7. Générer une clé SSH sur le master
+## 8. Générer la paire de clés SSH Ansible
 
-Toujours en tant que `datascientest` :
+Toujours sur `ansible-master` en tant que `datascientest` :
 
 ```bash
 ssh-keygen -t rsa -b 4096
 ```
 
-Acceptez les valeurs proposées pour ce lab.
+Pour le lab, acceptez les chemins proposés.
 
-Vous devez obtenir :
+Vous obtenez :
 
 ```text
-~/.ssh/id_rsa
-~/.ssh/id_rsa.pub
+/home/datascientest/.ssh/id_rsa
+/home/datascientest/.ssh/id_rsa.pub
 ```
 
-> La clé privée `id_rsa` ne doit jamais être ajoutée au repository.
+> `id_rsa` est une clé privée. Elle ne doit jamais être copiée dans le repository.
 
 ---
 
-## 8. Déployer la clé publique sur les cibles
+## 9. Distribuer la clé publique sans mot de passe
 
-Récupérez d'abord les IP depuis la machine hôte :
+Le cours adapté utilisait initialement un mot de passe temporaire pour `ssh-copy-id`. Pour la version GitHub, on évite de versionner ou de documenter un secret fixe.
+
+Depuis **la machine hôte**, récupérez la clé publique créée sur le master :
+
+```bash
+PUBKEY="$(multipass exec ansible-master -- sudo -u datascientest cat /home/datascientest/.ssh/id_rsa.pub)"
+```
+
+Injectez-la ensuite dans les trois cibles via Multipass :
+
+```bash
+for cible in cible1 cible2 cible3; do
+  multipass exec "$cible" -- sudo -u datascientest mkdir -p /home/datascientest/.ssh
+  multipass exec "$cible" -- sudo -u datascientest chmod 700 /home/datascientest/.ssh
+  multipass exec "$cible" -- sudo -u datascientest bash -c "printf '%s\n' '$PUBKEY' >> /home/datascientest/.ssh/authorized_keys"
+  multipass exec "$cible" -- sudo -u datascientest chmod 600 /home/datascientest/.ssh/authorized_keys
+done
+```
+
+Ce bootstrap utilise Multipass uniquement pour déposer **la clé publique**. À partir de ce point, Ansible communiquera directement avec les cibles via SSH.
+
+---
+
+## 10. Tester SSH depuis le master
+
+Récupérez les IP :
 
 ```bash
 multipass list
 ```
 
-Depuis `ansible-master`, copiez ensuite la clé publique :
+Retournez sur le master :
 
 ```bash
-ssh-copy-id datascientest@<IP_CIBLE1>
-ssh-copy-id datascientest@<IP_CIBLE2>
-ssh-copy-id datascientest@<IP_CIBLE3>
+multipass shell ansible-master
+sudo -iu datascientest
 ```
 
-Validez la connexion sans mot de passe :
+Puis testez une cible :
 
 ```bash
 ssh datascientest@<IP_CIBLE1>
 ```
 
-Puis quittez la cible :
+La connexion doit fonctionner grâce à la clé privée `~/.ssh/id_rsa` présente sur le master.
+
+Quittez la cible :
 
 ```bash
 exit
@@ -201,47 +238,9 @@ exit
 
 ---
 
-## 9. Particularité Ubuntu 24.04 : authentification SSH
+## 11. Configuration Ansible minimale
 
-Sur certaines images Ubuntu 24.04, le fichier :
-
-```text
-/etc/ssh/sshd_config.d/60-cloudimg-settings.conf
-```
-
-peut imposer :
-
-```text
-PasswordAuthentication no
-```
-
-et prendre le dessus sur `/etc/ssh/sshd_config`.
-
-Le `config.yaml` de ce lab traite ce cas afin de rendre le bootstrap pédagogique reproductible.
-
-En cas d'échec de `ssh-copy-id`, vérifiez sur une cible :
-
-```bash
-sudo grep -R "PasswordAuthentication" /etc/ssh/sshd_config /etc/ssh/sshd_config.d/
-```
-
-Puis contrôlez le service :
-
-```bash
-sudo systemctl status ssh
-```
-
----
-
-## 10. Configuration Ansible minimale
-
-Copiez le fichier `ansible.cfg` du lab dans le home de `datascientest` :
-
-```bash
-cp ansible.cfg ~/ansible.cfg
-```
-
-Contenu :
+Le fichier fourni contient :
 
 ```ini
 [defaults]
@@ -249,18 +248,27 @@ host_key_checking = False
 interpreter_python = auto_silent
 ```
 
-Cette configuration est adaptée au **lab local** :
+Copiez-le dans le home de `datascientest` si vous souhaitez l'utiliser globalement pour ce lab :
 
-- `host_key_checking = False` évite les confirmations interactives lors des recréations de VMs ;
-- `interpreter_python = auto_silent` laisse Ansible détecter Python sur les cibles sans warning inutile.
+```bash
+cp ansible.cfg ~/ansible.cfg
+```
 
-> En production, la désactivation globale de la vérification des clés SSH n'est pas une recommandation de sécurité.
+Ou conservez-le à la racine d'un projet Ansible et exécutez Ansible depuis ce répertoire.
+
+### Pourquoi ces paramètres ?
+
+`host_key_checking = False` évite les confirmations interactives fréquentes lorsqu'on recrée des VMs Multipass.
+
+`interpreter_python = auto_silent` demande à Ansible de détecter l'interpréteur Python des cibles sans afficher le warning de détection.
+
+> Cette désactivation de la vérification des clés SSH est acceptable pour ce **lab local jetable**. Ce n'est pas la configuration recommandée pour un environnement de production.
 
 ---
 
-## 11. Premier inventaire
+## 12. Créer le premier inventaire
 
-Créez `~/inventaire` sur le master avec les IP réellement attribuées :
+Sur `ansible-master`, créez `~/inventaire` avec les IP réellement attribuées :
 
 ```ini
 cible1 ansible_host=<IP_CIBLE1> ansible_user=datascientest ansible_ssh_private_key_file=~/.ssh/id_rsa
@@ -268,9 +276,15 @@ cible2 ansible_host=<IP_CIBLE2> ansible_user=datascientest ansible_ssh_private_k
 cible3 ansible_host=<IP_CIBLE3> ansible_user=datascientest ansible_ssh_private_key_file=~/.ssh/id_rsa
 ```
 
+Visualisez-le :
+
+```bash
+cat ~/inventaire
+```
+
 ---
 
-## 12. Test de bout en bout
+## 13. Test Ansible de bout en bout
 
 Depuis `ansible-master` :
 
@@ -278,14 +292,16 @@ Depuis `ansible-master` :
 ansible all -i ~/inventaire -m ping
 ```
 
-Résultat attendu pour chaque cible :
+Résultat attendu sur les trois machines :
 
 ```text
-SUCCESS
-ping: pong
+cible1 | SUCCESS => {
+    "changed": false,
+    "ping": "pong"
+}
 ```
 
-Architecture validée :
+Même résultat pour `cible2` et `cible3`.
 
 ```text
 ansible-master
@@ -299,56 +315,78 @@ ansible-master
 
 ---
 
-## 13. Script `instance_state.py`
+## 14. Débogage rapide
 
-Le script présent dans `scripts/instance_state.py` reproduit localement l'objectif du script AWS/Boto3 utilisé dans le cours original : afficher les instances actives et leurs informations principales.
-
-Il doit être exécuté depuis une machine qui dispose de la commande `multipass` :
+### Voir les IP
 
 ```bash
-python3 scripts/instance_state.py
+multipass list
 ```
 
-Il affiche notamment :
+### Vérifier une VM
 
-- nom ;
-- état ;
-- adresse IPv4 ;
-- release Ubuntu.
+```bash
+multipass info cible1
+```
+
+### Vérifier l'utilisateur créé
+
+```bash
+multipass exec cible1 -- id datascientest
+```
+
+### Vérifier la clé publique déposée
+
+```bash
+multipass exec cible1 -- sudo -u datascientest cat /home/datascientest/.ssh/authorized_keys
+```
+
+### Tester SSH en mode verbeux depuis le master
+
+```bash
+ssh -vvv datascientest@<IP_CIBLE1>
+```
+
+### Vérifier quelle configuration Ansible est chargée
+
+```bash
+ansible --version
+```
+
+La sortie indique le chemin du `config file` utilisé.
 
 ---
 
-## 14. Checklist de validation
+## 15. Checklist de validation
 
 - [ ] Multipass installé.
-- [ ] `ansible-master` démarré.
-- [ ] `cible1`, `cible2`, `cible3` démarrées.
-- [ ] utilisateur `datascientest` disponible.
-- [ ] Ansible installé sur le master.
-- [ ] clé SSH générée sur le master.
-- [ ] clé publique copiée sur les trois cibles.
-- [ ] connexions SSH fonctionnelles sans mot de passe.
-- [ ] `ansible.cfg` chargé.
-- [ ] inventaire créé avec les IP réelles.
+- [ ] `ansible-master`, `cible1`, `cible2` et `cible3` sont `Running`.
+- [ ] L'utilisateur `datascientest` existe sur les quatre VMs.
+- [ ] Ansible est installé sur le master.
+- [ ] Une paire de clés SSH existe sur le master.
+- [ ] La clé publique du master est présente dans `authorized_keys` sur les trois cibles.
+- [ ] Le master se connecte en SSH aux trois cibles.
+- [ ] `ansible.cfg` est chargé.
+- [ ] L'inventaire utilise les IP réelles.
 - [ ] `ansible all -i ~/inventaire -m ping` retourne `SUCCESS` sur les trois cibles.
 
 ---
 
-## 15. Arrêter le lab
+## 16. Arrêter ou détruire le lab
 
-Quand vous avez terminé :
+Arrêter :
 
 ```bash
 multipass stop ansible-master cible1 cible2 cible3
 ```
 
-Pour les redémarrer :
+Redémarrer :
 
 ```bash
 multipass start ansible-master cible1 cible2 cible3
 ```
 
-Pour supprimer complètement le lab :
+Supprimer :
 
 ```bash
 multipass delete ansible-master cible1 cible2 cible3
@@ -359,4 +397,13 @@ multipass purge
 
 ## Étape suivante
 
-Une fois ce bootstrap validé, le prochain lab est consacré aux **modules Ansible et aux commandes ad hoc** : `ping`, `setup`, `copy`, `apt`, `command` et `shell`.
+Une fois ce bootstrap validé, le **Lab 02** utilisera cette infrastructure pour travailler les modules et commandes ad hoc :
+
+```text
+ping
+setup
+copy
+apt
+command
+shell
+```
