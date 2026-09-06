@@ -1,0 +1,235 @@
+name: Terraform Project Final - AWS E2E Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type QUALIFY to create temporary AWS resources, test them, then destroy them."
+        required: true
+        default: "NO"
+      enable_https:
+        description: "Enable the self-signed HTTPS bonus during qualification"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  qualify:
+    if: ${{ inputs.confirm == 'QUALIFY' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: "192 - Terraform DevOps/Projet_Final/wordpress-aws"
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_enable_https: ${{ inputs.enable_https }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Require an AWS authentication method
+        shell: bash
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          AWS_ACCESS_KEY_ID_VALUE: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        run: |
+          if [ -z "$AWS_ROLE_ARN" ] && [ -z "$AWS_ACCESS_KEY_ID_VALUE" ]; then
+            echo "No AWS credentials are configured for this repository."
+            echo "Preferred: configure AWS_ROLE_ARN for GitHub OIDC."
+            echo "Fallback: configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."
+            exit 2
+          fi
+
+      - name: Configure AWS credentials with OIDC
+        if: ${{ secrets.AWS_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-3
+
+      - name: Configure AWS credentials with access keys
+        if: ${{ secrets.AWS_ROLE_ARN == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: eu-west-3
+
+      - name: Confirm AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Terraform format check
+        run: terraform fmt -check -diff -recursive
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: terraform plan -input=false -no-color -out=tfplan | tee qualification-plan.txt
+
+      - name: Terraform apply
+        id: apply
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Capture Terraform outputs
+        if: ${{ steps.apply.outcome == 'success' }}
+        shell: bash
+        run: |
+          terraform output -json > qualification-outputs.json
+          terraform output -no-color > qualification-outputs.txt
+
+          echo "WORDPRESS_URL=$(terraform output -raw wordpress_url)" >> "$GITHUB_ENV"
+          echo "WORDPRESS_PUBLIC_IP=$(terraform output -raw wordpress_public_ip)" >> "$GITHUB_ENV"
+          echo "RDS_ENDPOINT=$(terraform output -raw rds_endpoint)" >> "$GITHUB_ENV"
+          echo "EBS_VOLUME_ID=$(terraform output -raw extra_ebs_volume_id)" >> "$GITHUB_ENV"
+
+      - name: Verify AWS resource properties
+        if: ${{ steps.apply.outcome == 'success' }}
+        shell: bash
+        run: |
+          INSTANCE_ID=$(terraform show -json | jq -r '.. | objects | select(.address? == "module.ec2.aws_instance.wordpress") | .values.id' | head -n 1)
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "null" ]; then
+            echo "Unable to resolve EC2 instance ID from Terraform state."
+            exit 1
+          fi
+
+          EC2_AZ=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].Placement.AvailabilityZone' \
+            --output text)
+
+          EBS_AZ=$(aws ec2 describe-volumes \
+            --volume-ids "$EBS_VOLUME_ID" \
+            --query 'Volumes[0].AvailabilityZone' \
+            --output text)
+
+          RDS_ID=$(terraform show -json | jq -r '.. | objects | select(.address? == "module.rds.aws_db_instance.this") | .values.id' | head -n 1)
+          RDS_MULTI_AZ=$(aws rds describe-db-instances \
+            --db-instance-identifier "$RDS_ID" \
+            --query 'DBInstances[0].MultiAZ' \
+            --output text)
+
+          if [ "$EC2_AZ" != "$EBS_AZ" ]; then
+            echo "EC2 and EBS are not in the same Availability Zone: EC2=$EC2_AZ EBS=$EBS_AZ"
+            exit 1
+          fi
+
+          if [ "$RDS_MULTI_AZ" != "True" ] && [ "$RDS_MULTI_AZ" != "true" ]; then
+            echo "RDS Multi-AZ is not enabled: $RDS_MULTI_AZ"
+            exit 1
+          fi
+
+          {
+            echo "EC2 instance: $INSTANCE_ID"
+            echo "EC2 AZ: $EC2_AZ"
+            echo "EBS volume: $EBS_VOLUME_ID"
+            echo "EBS AZ: $EBS_AZ"
+            echo "RDS instance: $RDS_ID"
+            echo "RDS Multi-AZ: $RDS_MULTI_AZ"
+          } | tee qualification-aws-properties.txt
+
+      - name: Wait for WordPress bootstrap and smoke test HTTP
+        if: ${{ steps.apply.outcome == 'success' }}
+        shell: bash
+        run: |
+          success=0
+          for attempt in $(seq 1 60); do
+            HTTP_CODE=$(curl -L -sS -o /tmp/wordpress-response.html -w '%{http_code}' --connect-timeout 5 --max-time 15 "$WORDPRESS_URL" || true)
+            echo "Attempt $attempt/60 - HTTP $HTTP_CODE - $WORDPRESS_URL"
+
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+              success=1
+              break
+            fi
+
+            sleep 10
+          done
+
+          if [ "$success" -ne 1 ]; then
+            echo "WordPress did not become reachable during the 10-minute qualification window."
+            exit 1
+          fi
+
+          grep -Eio '<title>[^<]+' /tmp/wordpress-response.html | head -n 1 || true
+          echo "HTTP smoke test passed." | tee qualification-http.txt
+
+      - name: Verify WordPress bootstrap from EC2 console output
+        if: ${{ steps.apply.outcome == 'success' }}
+        shell: bash
+        run: |
+          INSTANCE_ID=$(terraform show -json | jq -r '.. | objects | select(.address? == "module.ec2.aws_instance.wordpress") | .values.id' | head -n 1)
+          aws ec2 get-console-output --instance-id "$INSTANCE_ID" --latest --output text > ec2-console-output.txt || true
+          if grep -q "Bootstrap WordPress terminé" ec2-console-output.txt; then
+            echo "Bootstrap completion marker found in EC2 console output."
+          else
+            echo "Bootstrap marker was not found in EC2 console output; HTTP smoke test remains authoritative."
+          fi
+
+      - name: Build qualification report
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "# AWS real qualification report"
+            echo
+            echo "- Date UTC: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "- Region: eu-west-3"
+            echo "- Terraform version: $(terraform version | head -n 1)"
+            echo "- Apply outcome: ${{ steps.apply.outcome }}"
+            echo "- Cleanup is executed in the final step with terraform destroy."
+            echo
+            if [ -f qualification-aws-properties.txt ]; then
+              echo "## AWS properties"
+              echo '```text'
+              cat qualification-aws-properties.txt
+              echo '```'
+            fi
+            if [ -f qualification-http.txt ]; then
+              echo
+              echo "## HTTP smoke test"
+              cat qualification-http.txt
+            fi
+          } > qualification-report.md
+
+      - name: Upload qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-project-final-aws-e2e-evidence
+          path: |
+            192 - Terraform DevOps/Projet_Final/wordpress-aws/qualification-plan.txt
+            192 - Terraform DevOps/Projet_Final/wordpress-aws/qualification-outputs.json
+            192 - Terraform DevOps/Projet_Final/wordpress-aws/qualification-outputs.txt
+            192 - Terraform DevOps/Projet_Final/wordpress-aws/qualification-aws-properties.txt
+            192 - Terraform DevOps/Projet_Final/wordpress-aws/qualification-http.txt
+            192 - Terraform DevOps/Projet_Final/wordpress-aws/ec2-console-output.txt
+            192 - Terraform DevOps/Projet_Final/wordpress-aws/qualification-report.md
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Terraform destroy
+        if: always()
+        shell: bash
+        run: |
+          terraform destroy -input=false -auto-approve -no-color || {
+            echo "WARNING: terraform destroy failed. Check AWS immediately for residual resources."
+            exit 1
+          }
