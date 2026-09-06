@@ -12,7 +12,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 | 2 | `191.02_ANSIBLE_MODULES_ET_COMMANDES_AD_HOC.md` | ✅ Canonique |
 | 3 | `191.03_ANSIBLE_INVENTAIRES.md` | ✅ Canonique |
 | 4 | `191.04_ANSIBLE_PLAYBOOKS.md` | ✅ Canonique |
-| 5 | `191.05_ANSIBLE_ROLES.md` | ⏳ À produire |
+| 5 | `191.05_ANSIBLE_ROLES.md` | ✅ Canonique |
 | 6 | `191.06_ANSIBLE_VAULT.md` | ⏳ À produire |
 | 7 | `191.07_ANSIBLE_CONCLUSION_ET_PROJET_FINAL.md` | ⏳ À produire |
 
@@ -37,7 +37,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 | 2 | `labs/02-modules-ad-hoc/` | ✅ Modules et commandes ad hoc |
 | 3 | `labs/03-inventory/` | ✅ Inventaire structuré dev/test/prod |
 | 4 | `labs/04-playbooks/` | ✅ Apache + PostgreSQL + features Playbook |
-| 5 | `labs/05-roles-wordpress/` | ⏳ |
+| 5 | `labs/05-roles-wordpress/` | ✅ Rôle WordPress + Nginx + MySQL |
 | 6 | `labs/06-vault/` | ⏳ |
 
 Chaque laboratoire doit être reproductible et inclure au minimum :
@@ -128,6 +128,42 @@ troubleshooting Apache/PostgreSQL
 
 Un second playbook `features-demo.yaml` permet de pratiquer les facts, conditions, `register`, `debug` et boucles sans transformer le lab en projet applicatif complexe.
 
+### Lab 05 — Rôles WordPress
+
+Le cinquième laboratoire transforme le cas WordPress en rôle réutilisable :
+
+```text
+install_wordpress.yaml
+        │
+        ▼
+roles/wordpress/
+├── defaults/
+├── tasks/
+├── handlers/
+├── templates/
+├── files/
+├── vars/
+├── meta/
+└── tests/
+```
+
+Il couvre :
+
+```text
+ansible-galaxy init
+structure standard d'un rôle
+defaults vs vars
+handlers / notify
+include_tasks
+templates Jinja2
+Ansible Galaxy
+community.mysql
+WordPress + Nginx + PHP-FPM + MySQL
+validation de structure et syntax-check
+```
+
+Le lab conserve l'objectif pédagogique du support tout en adaptant les dépendances modernes (`community.mysql`), les FQCN et les règles de sécurité minimales d'un dépôt public.
+
 ## Examen
 
 La partie `Examen/` sera séparée du cours afin de distinguer clairement :
@@ -174,9 +210,9 @@ Les ressources historiques ne sont pas considérées comme documentation active.
           ↓
 [6] 191.04 + Lab 04                     ✅
           ↓
-[7] 191.05 + Lab 05                     ⏭️ NEXT
+[7] 191.05 + Lab 05                     ✅
           ↓
-[8] 191.06 + Lab 06
+[8] 191.06 + Lab 06                     ⏭️ NEXT
           ↓
 [9] 191.07 + Examen
           ↓
