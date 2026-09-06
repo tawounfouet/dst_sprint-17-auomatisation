@@ -23,14 +23,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    defaults:
-      run:
-        working-directory: "192 - Terraform DevOps/Projet_Final/wordpress-aws"
-
     env:
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
       TF_VAR_enable_https: ${{ inputs.enable_https }}
+      AWS_ROLE_ARN_SECRET: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_ACCESS_KEY_ID_SECRET: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN_SECRET: ${{ secrets.AWS_SESSION_TOKEN }}
+
+    defaults:
+      run:
+        working-directory: "192 - Terraform DevOps/Projet_Final/wordpress-aws"
 
     steps:
       - name: Checkout
@@ -43,11 +47,8 @@ jobs:
 
       - name: Require an AWS authentication method
         shell: bash
-        env:
-          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-          AWS_ACCESS_KEY_ID_VALUE: ${{ secrets.AWS_ACCESS_KEY_ID }}
         run: |
-          if [ -z "$AWS_ROLE_ARN" ] && [ -z "$AWS_ACCESS_KEY_ID_VALUE" ]; then
+          if [ -z "$AWS_ROLE_ARN_SECRET" ] && [ -z "$AWS_ACCESS_KEY_ID_SECRET" ]; then
             echo "No AWS credentials are configured for this repository."
             echo "Preferred: configure AWS_ROLE_ARN for GitHub OIDC."
             echo "Fallback: configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."
@@ -55,19 +56,19 @@ jobs:
           fi
 
       - name: Configure AWS credentials with OIDC
-        if: ${{ secrets.AWS_ROLE_ARN != '' }}
+        if: ${{ env.AWS_ROLE_ARN_SECRET != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN_SECRET }}
           aws-region: eu-west-3
 
       - name: Configure AWS credentials with access keys
-        if: ${{ secrets.AWS_ROLE_ARN == '' }}
+        if: ${{ env.AWS_ROLE_ARN_SECRET == '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID_SECRET }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY_SECRET }}
+          aws-session-token: ${{ env.AWS_SESSION_TOKEN_SECRET }}
           aws-region: eu-west-3
 
       - name: Confirm AWS identity
