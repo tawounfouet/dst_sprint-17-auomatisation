@@ -13,7 +13,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 | 3 | `191.03_ANSIBLE_INVENTAIRES.md` | ✅ Canonique |
 | 4 | `191.04_ANSIBLE_PLAYBOOKS.md` | ✅ Canonique |
 | 5 | `191.05_ANSIBLE_ROLES.md` | ✅ Canonique |
-| 6 | `191.06_ANSIBLE_VAULT.md` | ⏳ À produire |
+| 6 | `191.06_ANSIBLE_VAULT.md` | ✅ Canonique |
 | 7 | `191.07_ANSIBLE_CONCLUSION_ET_PROJET_FINAL.md` | ⏳ À produire |
 
 ## Documents transverses
@@ -38,7 +38,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 | 3 | `labs/03-inventory/` | ✅ Inventaire structuré dev/test/prod |
 | 4 | `labs/04-playbooks/` | ✅ Apache + PostgreSQL + features Playbook |
 | 5 | `labs/05-roles-wordpress/` | ✅ Rôle WordPress réutilisable |
-| 6 | `labs/06-vault/` | ⏳ |
+| 6 | `labs/06-vault/` | ✅ Vault + variables sensibles WordPress |
 
 Chaque laboratoire doit être reproductible et inclure au minimum :
 
@@ -147,6 +147,24 @@ install_wordpress.yaml
 
 Il couvre `ansible-galaxy init`, la structure standard d'un rôle, `include_tasks`, les handlers, les templates Nginx/WordPress, le dépannage du vhost Nginx par défaut et l'appel du rôle depuis un playbook d'orchestration. Les variables sensibles restent des placeholders : leur chiffrement est l'objet du Lab 06.
 
+### Lab 06 — Vault
+
+Le sixième laboratoire prolonge le Lab 05 sans dupliquer le rôle WordPress. Il applique Ansible Vault à `group_vars/production.yaml` et pratique :
+
+```text
+ansible-vault create
+ansible-vault encrypt
+ansible-vault view
+ansible-vault edit
+ansible-vault rekey
+ansible-vault decrypt
+--ask-vault-pass
+--vault-password-file
+chmod 600 ~/.vault_pass
+```
+
+Le fichier publié reste un `production.example.yaml` sans secret réel. Le fichier local `production.yaml` est explicitement ignoré par Git et doit être chiffré avant d'être utilisé avec le playbook WordPress.
+
 ## Examen
 
 La partie `Examen/` sera séparée du cours afin de distinguer clairement :
@@ -195,9 +213,9 @@ Les ressources historiques ne sont pas considérées comme documentation active.
           ↓
 [7] 191.05 + Lab 05                     ✅
           ↓
-[8] 191.06 + Lab 06                     ⏭️ NEXT
+[8] 191.06 + Lab 06                     ✅
           ↓
-[9] 191.07 + Examen
+[9] 191.07 + Examen                     ⏭️ NEXT
           ↓
 [10] Projet final
           ↓
