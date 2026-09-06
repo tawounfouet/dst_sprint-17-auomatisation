@@ -1,0 +1,30 @@
+---
+django_app_name: datascientest_django
+django_system_user: django
+django_system_group: django
+django_install_dir: /opt/datascientest-django
+django_venv_dir: "{{ django_install_dir }}/.venv"
+django_source_dir: "{{ playbook_dir }}/../../django-app"
+django_config_dir: /etc/datascientest-django
+django_environment_file: "{{ django_config_dir }}/django.env"
+django_service_name: datascientest-django
+django_settings_module: config.settings
+django_allowed_hosts: "*"
+django_debug: false
+django_gunicorn_bind: 127.0.0.1:8000
+django_gunicorn_workers: 3
+
+postgresql_database: django_app
+postgresql_user: django_app
+postgresql_port: 5432
+postgresql_host: "{{ hostvars[groups['database'][0]].ansible_host | default(groups['database'][0]) }}"
+postgresql_password: "{{ vault_postgresql_password }}"
+
+django_secret_key: "{{ vault_django_secret_key }}"
+
+django_packages:
+  - python3
+  - python3-venv
+  - python3-pip
+  - build-essential
+  - libpq-dev

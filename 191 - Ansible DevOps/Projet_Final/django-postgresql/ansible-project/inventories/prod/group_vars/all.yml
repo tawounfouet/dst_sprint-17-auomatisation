@@ -3,7 +3,7 @@ django_app_name: datascientest_django
 django_system_user: django
 django_system_group: django
 django_install_dir: /opt/datascientest-django
-django_venv_dir: /opt/datascientest-django/venv
+django_venv_dir: /opt/datascientest-django/.venv
 django_settings_module: config.settings
 django_allowed_hosts: "*"
 django_debug: false

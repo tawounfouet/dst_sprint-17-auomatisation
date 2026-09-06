@@ -1,0 +1,160 @@
+---
+- name: Install Django runtime system packages
+  ansible.builtin.apt:
+    name: "{{ django_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create Django system group
+  ansible.builtin.group:
+    name: "{{ django_system_group }}"
+    system: true
+    state: present
+
+- name: Create Django system user
+  ansible.builtin.user:
+    name: "{{ django_system_user }}"
+    group: "{{ django_system_group }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Create Django application directory
+  ansible.builtin.file:
+    path: "{{ django_install_dir }}"
+    state: directory
+    owner: "{{ django_system_user }}"
+    group: "{{ django_system_group }}"
+    mode: '0755'
+
+- name: Create Django configuration directory
+  ansible.builtin.file:
+    path: "{{ django_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ django_system_group }}"
+    mode: '0750'
+
+- name: Deploy Django application source
+  ansible.builtin.copy:
+    src: "{{ django_source_dir }}/"
+    dest: "{{ django_install_dir }}/"
+    owner: "{{ django_system_user }}"
+    group: "{{ django_system_group }}"
+    mode: preserve
+  notify: Restart Django application
+
+- name: Create Python venv named .venv
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -m
+      - venv
+      - "{{ django_venv_dir }}"
+    creates: "{{ django_venv_dir }}/bin/python"
+  become_user: "{{ django_system_user }}"
+
+- name: Install Django application dependencies into .venv
+  ansible.builtin.pip:
+    requirements: "{{ django_install_dir }}/requirements.txt"
+    executable: "{{ django_venv_dir }}/bin/pip"
+  become_user: "{{ django_system_user }}"
+  notify: Restart Django application
+
+- name: Render Django runtime environment file
+  ansible.builtin.template:
+    src: django.env.j2
+    dest: "{{ django_environment_file }}"
+    owner: root
+    group: "{{ django_system_group }}"
+    mode: '0640'
+  no_log: true
+  notify: Restart Django application
+
+- name: Run Django system checks
+  ansible.builtin.command:
+    argv:
+      - "{{ django_venv_dir }}/bin/python"
+      - manage.py
+      - check
+    chdir: "{{ django_install_dir }}"
+  become_user: "{{ django_system_user }}"
+  environment:
+    DJANGO_SECRET_KEY: "{{ django_secret_key }}"
+    DJANGO_DEBUG: "{{ django_debug | ternary('true', 'false') }}"
+    DJANGO_ALLOWED_HOSTS: "{{ django_allowed_hosts }}"
+    POSTGRES_DB: "{{ postgresql_database }}"
+    POSTGRES_USER: "{{ postgresql_user }}"
+    POSTGRES_PASSWORD: "{{ postgresql_password }}"
+    POSTGRES_HOST: "{{ postgresql_host }}"
+    POSTGRES_PORT: "{{ postgresql_port | string }}"
+  changed_when: false
+  no_log: true
+
+- name: Apply Django database migrations
+  ansible.builtin.command:
+    argv:
+      - "{{ django_venv_dir }}/bin/python"
+      - manage.py
+      - migrate
+      - --noinput
+    chdir: "{{ django_install_dir }}"
+  become_user: "{{ django_system_user }}"
+  environment:
+    DJANGO_SECRET_KEY: "{{ django_secret_key }}"
+    DJANGO_DEBUG: "{{ django_debug | ternary('true', 'false') }}"
+    DJANGO_ALLOWED_HOSTS: "{{ django_allowed_hosts }}"
+    POSTGRES_DB: "{{ postgresql_database }}"
+    POSTGRES_USER: "{{ postgresql_user }}"
+    POSTGRES_PASSWORD: "{{ postgresql_password }}"
+    POSTGRES_HOST: "{{ postgresql_host }}"
+    POSTGRES_PORT: "{{ postgresql_port | string }}"
+  register: django_migrate_result
+  changed_when: "'No migrations to apply' not in django_migrate_result.stdout"
+  no_log: true
+
+- name: Collect Django static files
+  ansible.builtin.command:
+    argv:
+      - "{{ django_venv_dir }}/bin/python"
+      - manage.py
+      - collectstatic
+      - --noinput
+    chdir: "{{ django_install_dir }}"
+  become_user: "{{ django_system_user }}"
+  environment:
+    DJANGO_SECRET_KEY: "{{ django_secret_key }}"
+    DJANGO_DEBUG: "{{ django_debug | ternary('true', 'false') }}"
+    DJANGO_ALLOWED_HOSTS: "{{ django_allowed_hosts }}"
+    POSTGRES_DB: "{{ postgresql_database }}"
+    POSTGRES_USER: "{{ postgresql_user }}"
+    POSTGRES_PASSWORD: "{{ postgresql_password }}"
+    POSTGRES_HOST: "{{ postgresql_host }}"
+    POSTGRES_PORT: "{{ postgresql_port | string }}"
+  register: django_collectstatic_result
+  changed_when: "'0 static files copied' not in django_collectstatic_result.stdout"
+  no_log: true
+
+- name: Install Gunicorn systemd unit
+  ansible.builtin.template:
+    src: django-gunicorn.service.j2
+    dest: "/etc/systemd/system/{{ django_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  register: django_service_unit
+  notify: Restart Django application
+
+- name: Reload systemd when Gunicorn unit changes
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: django_service_unit.changed
+  changed_when: false
+
+- name: Enable and start Django Gunicorn service
+  ansible.builtin.systemd_service:
+    name: "{{ django_service_name }}"
+    enabled: true
+    state: started

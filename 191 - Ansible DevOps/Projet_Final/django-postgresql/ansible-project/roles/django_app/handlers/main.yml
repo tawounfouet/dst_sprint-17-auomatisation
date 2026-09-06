@@ -1,0 +1,7 @@
+---
+- name: Restart Django application
+  ansible.builtin.systemd_service:
+    name: "{{ django_service_name }}"
+    state: restarted
+    enabled: true
+  listen: Restart Django application
