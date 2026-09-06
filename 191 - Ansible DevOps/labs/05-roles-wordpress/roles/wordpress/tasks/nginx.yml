@@ -1,0 +1,40 @@
+---
+- name: Déterminer la version PHP installée
+  ansible.builtin.command:
+    argv:
+      - php
+      - -r
+      - 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'
+  register: php_version
+  changed_when: false
+
+- name: Démarrer PHP-FPM
+  ansible.builtin.service:
+    name: "php{{ php_version.stdout }}-fpm"
+    state: started
+    enabled: true
+
+- name: Démarrer Nginx
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Supprimer le site Nginx par défaut
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Restart nginx
+
+- name: Installer le vhost WordPress
+  ansible.builtin.template:
+    src: nginx-vhost.j2
+    dest: /etc/nginx/conf.d/wordpress.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart nginx
+
+- name: Vérifier la syntaxe Nginx
+  ansible.builtin.command: nginx -t
+  changed_when: false

@@ -1,0 +1,93 @@
+---
+- name: Installer les paquets WordPress, PHP, Nginx et MySQL
+  ansible.builtin.apt:
+    name: "{{ wordpress_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+  when: ansible_facts.distribution == 'Ubuntu'
+
+- name: Démarrer MySQL
+  ansible.builtin.service:
+    name: mysql
+    state: started
+    enabled: true
+
+- name: Télécharger WordPress
+  ansible.builtin.get_url:
+    url: "{{ wp_archive_url }}"
+    dest: /tmp/wordpress-latest.tar.gz
+    mode: '0644'
+
+- name: Créer le répertoire parent WordPress
+  ansible.builtin.file:
+    path: "{{ wp_install_parent }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+
+- name: Extraire WordPress
+  ansible.builtin.unarchive:
+    src: /tmp/wordpress-latest.tar.gz
+    dest: "{{ wp_install_parent }}"
+    remote_src: true
+    creates: "{{ wp_install_dir }}/wp-settings.php"
+
+- name: Créer la base WordPress
+  community.mysql.mysql_db:
+    name: "{{ wp_db_name }}"
+    state: present
+    encoding: "{{ wp_db_charset }}"
+    collation: "{{ wp_db_collate | default(omit, true) }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: Créer l'utilisateur MySQL WordPress
+  community.mysql.mysql_user:
+    name: "{{ wp_db_user }}"
+    password: "{{ wp_db_password }}"
+    priv: "{{ wp_db_name }}.*:ALL"
+    host: localhost
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  no_log: true
+
+- name: Vérifier si wp-config.php existe déjà
+  ansible.builtin.stat:
+    path: "{{ wp_install_dir }}/wp-config.php"
+  register: wp_config_stat
+
+- name: Récupérer les sels WordPress lors de la première installation
+  ansible.builtin.uri:
+    url: https://api.wordpress.org/secret-key/1.1/salt/
+    return_content: true
+  delegate_to: localhost
+  become: false
+  register: wp_salt_response
+  when: not wp_config_stat.stat.exists
+
+- name: Définir les sels WordPress
+  ansible.builtin.set_fact:
+    wp_salt: "{{ wp_salt_response.content }}"
+  when: not wp_config_stat.stat.exists
+
+- name: Générer wp-config.php lors de la première installation
+  ansible.builtin.template:
+    src: wp-config.php.j2
+    dest: "{{ wp_install_dir }}/wp-config.php"
+    owner: www-data
+    group: www-data
+    mode: '0640'
+  when: not wp_config_stat.stat.exists
+
+- name: Appliquer les permissions WordPress
+  ansible.builtin.file:
+    path: "{{ wp_install_dir }}"
+    owner: www-data
+    group: www-data
+    state: directory
+    recurse: true
+
+- name: Charger les tâches Nginx
+  ansible.builtin.include_tasks: nginx.yml
+  when: wp_webserver == 'nginx'

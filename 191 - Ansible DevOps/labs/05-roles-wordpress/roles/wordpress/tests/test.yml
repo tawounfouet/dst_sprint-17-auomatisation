@@ -1,0 +1,7 @@
+---
+- name: Syntax harness for wordpress role
+  hosts: test
+  gather_facts: false
+  become: false
+  roles:
+    - role: wordpress

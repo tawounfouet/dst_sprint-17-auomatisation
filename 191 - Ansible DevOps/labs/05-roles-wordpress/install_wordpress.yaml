@@ -1,0 +1,6 @@
+---
+- name: Déployer WordPress avec le rôle wordpress
+  hosts: production
+  become: true
+  roles:
+    - role: wordpress

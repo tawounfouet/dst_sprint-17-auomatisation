@@ -1,0 +1,22 @@
+# Local inventory values
+host_vars/serveurweb1.yaml
+
+# Secrets
+.vault_pass
+*.vault-pass
+.env
+.env.*
+
+# Runtime
+*.retry
+*.log
+.ansible/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
