@@ -32,17 +32,24 @@
     group: www-data
     mode: "0755"
 
+- name: Check whether PrestaShop is already installed
+  ansible.builtin.stat:
+    path: "{{ prestashop_install_dir }}/app/config/parameters.php"
+  register: prestashop_parameters
+
 - name: Download official PrestaShop installer package
   ansible.builtin.get_url:
     url: "{{ prestashop_download_url }}"
     dest: "/tmp/prestashop_{{ prestashop_version }}.zip"
     mode: "0644"
+  when: not prestashop_parameters.stat.exists
 
 - name: Create release extraction directory
   ansible.builtin.file:
     path: "/tmp/prestashop-release-{{ prestashop_version }}"
     state: directory
     mode: "0755"
+  when: not prestashop_parameters.stat.exists
 
 - name: Extract PrestaShop release package
   ansible.builtin.unarchive:
@@ -50,17 +57,23 @@
     dest: "/tmp/prestashop-release-{{ prestashop_version }}"
     remote_src: true
     creates: "/tmp/prestashop-release-{{ prestashop_version }}/.ansible_extracted"
+  register: prestashop_outer_extract
+  when: not prestashop_parameters.stat.exists
 
 - name: Mark outer package as extracted
   ansible.builtin.file:
     path: "/tmp/prestashop-release-{{ prestashop_version }}/.ansible_extracted"
     state: touch
     mode: "0644"
+  when:
+    - not prestashop_parameters.stat.exists
+    - prestashop_outer_extract is changed
 
 - name: Check for nested prestashop.zip package layout
   ansible.builtin.stat:
     path: "/tmp/prestashop-release-{{ prestashop_version }}/prestashop.zip"
   register: prestashop_nested_archive
+  when: not prestashop_parameters.stat.exists
 
 - name: Extract nested PrestaShop application package
   ansible.builtin.unarchive:
@@ -69,8 +82,10 @@
     remote_src: true
     owner: www-data
     group: www-data
-    creates: "{{ prestashop_install_dir }}/install/index_cli.php"
-  when: prestashop_nested_archive.stat.exists
+    creates: "{{ prestashop_install_dir }}/app/config/parameters.php"
+  when:
+    - not prestashop_parameters.stat.exists
+    - prestashop_nested_archive.stat.exists
 
 - name: Copy direct installer package contents when no nested archive exists
   ansible.builtin.copy:
@@ -80,12 +95,15 @@
     owner: www-data
     group: www-data
     mode: preserve
-  when: not prestashop_nested_archive.stat.exists
+  when:
+    - not prestashop_parameters.stat.exists
+    - not prestashop_nested_archive.stat.exists
 
 - name: Check PrestaShop CLI installer exists
   ansible.builtin.stat:
     path: "{{ prestashop_install_dir }}/install/index_cli.php"
   register: prestashop_cli_installer
+  when: not prestashop_parameters.stat.exists
 
 - name: Fail when the selected package is not an installable release
   ansible.builtin.fail:
@@ -93,7 +111,9 @@
       No install/index_cli.php was found after extraction. The configured
       prestashop_download_url must reference a packaged installer, not the raw
       GitHub source archive.
-  when: not prestashop_cli_installer.stat.exists
+  when:
+    - not prestashop_parameters.stat.exists
+    - not prestashop_cli_installer.stat.exists
 
 - name: Install Apache virtual host
   ansible.builtin.template:
