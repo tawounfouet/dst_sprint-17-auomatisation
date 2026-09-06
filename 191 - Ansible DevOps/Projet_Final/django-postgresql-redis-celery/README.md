@@ -6,6 +6,7 @@ Variante dérivée du projet `django-postgresql/` afin d'ajouter Redis et Celery
 
 ```text
 BASELINE COPIED          ✅
+ARCHITECTURE / CONTRACTS ✅
 REDIS IMPLEMENTATION     ⏳
 CELERY IMPLEMENTATION    ⏳
 ASYNC TASK API           ⏳
@@ -26,7 +27,7 @@ Branche         : feat/ansible-django-postgresql-project
 
 Le projet source a été qualifié en mono-host sur Ubuntu 24.04 avec Nginx, Gunicorn, Django et PostgreSQL. Cette preuve sert uniquement de référence de conception.
 
-## Architecture cible
+## Architecture cible figée en RC-01
 
 ```text
 Nginx :80
@@ -40,7 +41,7 @@ Django
                   Celery Worker
 ```
 
-Le contrat réseau cible sera :
+Le contrat réseau est :
 
 ```text
 80    → exposé
@@ -48,6 +49,8 @@ Le contrat réseau cible sera :
 5432  → localhost-only
 6379  → localhost-only
 ```
+
+Redis sera utilisé comme broker Celery (`/0`) et result backend (`/1`), avec authentification et mot de passe fourni par Ansible Vault.
 
 ## Rôles cibles
 
@@ -60,10 +63,35 @@ celery
 nginx
 ```
 
-Les rôles `redis` et `celery` ne sont pas encore implémentés à l'issue de RC-00.
+Ordre prévu :
 
-## Roadmap
+```text
+common → postgresql → redis → django_app → celery → nginx
+```
+
+Les rôles `redis` et `celery` ne sont pas encore implémentés à l'issue de RC-01.
+
+## Tâches de démonstration cibles
+
+```text
+add(21, 21)               → 42
+uppercase("datascientest") → "DATASCIENTEST"
+database_probe()          → PostgreSQL → SELECT 1
+```
+
+La future CI devra exécuter réellement ces tâches via Redis et un worker Celery.
+
+## Documentation
 
 Le plan détaillé est défini dans [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).
 
-Le prochain jalon après RC-00 est **RC-01 — Architecture et contrats**.
+Les contrats d'architecture sont définis dans [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+
+Étapes réalisées :
+
+```text
+RC-00  Fork contrôlé de la baseline    ✅
+RC-01  Architecture et contrats        ✅
+```
+
+Le prochain jalon est **RC-02 — Dépendances Python**.
