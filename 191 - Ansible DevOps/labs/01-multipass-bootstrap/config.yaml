@@ -1,0 +1,19 @@
+#cloud-config
+# Bootstrap local pour le lab Ansible / Multipass.
+# Aucun mot de passe ni secret n'est stocké dans Git.
+
+users:
+  - default
+  - name: datascientest
+    gecos: datascientest
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+
+runcmd:
+  - sudo install -d -m 0700 -o datascientest -g datascientest /home/datascientest/.ssh
+  - sudo touch /home/datascientest/.ssh/authorized_keys
+  - sudo chmod 0600 /home/datascientest/.ssh/authorized_keys
+  - sudo chown datascientest:datascientest /home/datascientest/.ssh/authorized_keys
+  - sudo systemctl restart ssh
