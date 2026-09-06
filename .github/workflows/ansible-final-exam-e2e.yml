@@ -31,24 +31,28 @@ jobs:
           ansible-galaxy collection install -r requirements.yml
           ansible-galaxy collection install community.docker
 
-      - name: Build two Ubuntu 24.04 systemd targets
+      - name: Start two Ubuntu 24.04 systemd targets
         run: |
-          mkdir -p "$RUNNER_TEMP/ansible-e2e"
-          cat > "$RUNNER_TEMP/ansible-e2e/Dockerfile" <<'DOCKERFILE'
-          FROM ubuntu:24.04
-          ENV DEBIAN_FRONTEND=noninteractive
-          RUN apt-get update && apt-get install -y --no-install-recommends systemd systemd-sysv dbus python3 ca-certificates curl iproute2 procps && rm -rf /var/lib/apt/lists/*
-          STOPSIGNAL SIGRTMIN+3
-          CMD ["/sbin/init"]
-          DOCKERFILE
-          docker build -t ansible-e2e-target "$RUNNER_TEMP/ansible-e2e"
+          docker pull geerlingguy/docker-ubuntu2404-ansible:latest
           docker network create ansible-e2e
           for host in web1 db1; do
-            docker run -d --name "$host" --hostname "$host" --network ansible-e2e --privileged --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:rw ansible-e2e-target
+            docker run --detach \
+              --name "$host" \
+              --hostname "$host" \
+              --network ansible-e2e \
+              --privileged \
+              --volume=/sys/fs/cgroup:/sys/fs/cgroup:rw \
+              --cgroupns=host \
+              geerlingguy/docker-ubuntu2404-ansible:latest
           done
           for host in web1 db1; do
             ready=0
             for i in $(seq 1 30); do
+              if ! docker inspect -f '{{.State.Running}}' "$host" 2>/dev/null | grep -q true; then
+                echo "$host exited during startup"
+                docker logs "$host" || true
+                exit 1
+              fi
               state="$(docker exec "$host" systemctl is-system-running 2>/dev/null || true)"
               if [[ "$state" == "running" || "$state" == "degraded" ]]; then
                 ready=1
@@ -58,6 +62,7 @@ jobs:
             done
             if [[ "$ready" != 1 ]]; then
               echo "$host did not reach running/degraded systemd state"
+              docker logs "$host" || true
               docker exec "$host" systemctl --failed --no-pager || true
               exit 1
             fi
@@ -130,6 +135,7 @@ jobs:
         run: |
           for host in web1 db1; do
             echo "===== $host ====="
+            docker logs "$host" || true
             docker exec "$host" systemctl --failed --no-pager || true
             docker exec "$host" journalctl -n 200 --no-pager || true
           done
