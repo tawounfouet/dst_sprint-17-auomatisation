@@ -1,58 +1,56 @@
 # Guide d'implémentation
 
-Le point d'entrée du déploiement est désormais :
+Le point d'entrée du déploiement est :
 
 ```text
 ansible-project/playbooks/site.yml
 ```
 
-L'orchestration applique successivement :
+L'orchestration applique successivement `common`, `postgresql`, `django_app`, puis `nginx`. Les secrets `vault_postgresql_password` et `vault_django_secret_key` résident dans `inventories/prod/group_vars/vault.yml`, fichier local chiffré et non versionné.
 
-```text
-validation topologie
-        ↓
-common sur tous les hôtes
-        ↓
-postgresql sur le groupe database
-        ↓
-django_app sur le groupe app
-        ↓
-nginx sur le groupe app
-```
-
-Les secrets `vault_postgresql_password` et `vault_django_secret_key` résident dans un fichier Vault local non versionné :
-
-```text
-inventories/prod/group_vars/vault.yml
-```
-
-Les plays PostgreSQL et Django chargent ce fichier explicitement avec `vars_files`. Le fichier doit être créé à partir de `vault.example.yml`, puis chiffré avec `ansible-vault`.
-
-Pour le runtime Python du projet Django, le choix retenu est **le module standard `venv`**, et non le paquet tiers `virtualenv`.
-
-L'environnement virtuel est créé sous :
+Le runtime Python utilise exclusivement le module standard `venv` avec :
 
 ```text
 /opt/datascientest-django/.venv
 ```
 
-avec :
+## Barrière statique
+
+Avant tout déploiement ou qualification :
 
 ```bash
-python3 -m venv /opt/datascientest-django/.venv
+cd ansible-project
+./tests/static_checks.sh
 ```
 
-Les dépendances sont ensuite installées avec le `pip` embarqué dans `.venv`.
+Cette suite contrôle la structure, le scaffold Django, les syntaxes disponibles, plusieurs invariants de hardening et les fichiers sensibles suivis par Git. Elle ne remplace pas la qualification runtime.
 
-## Exécution
-
-Depuis `ansible-project/` :
+## Workflow d'exploitation
 
 ```bash
-ansible-playbook playbooks/site.yml --syntax-check --ask-vault-pass
-ansible-playbook playbooks/site.yml --ask-vault-pass
+./tests/static_checks.sh
+./scripts/preflight.sh
+./scripts/deploy.sh
+./scripts/validate_runtime.sh
+./scripts/package.sh
 ```
 
-Les quatre rôles restent séparés afin que chaque tier conserve sa responsabilité propre.
+Le flux devient :
 
-La validation finale attend `/health/` et `/health/database/` en HTTP 200, puis une seconde exécution Ansible sans changement résiduel. Ces contrôles appartiennent aux lots de validation suivants et ne sont pas déclarés réussis à ce stade.
+```text
+static checks
+     ↓
+preflight
+     ↓
+deploy
+     ↓
+runtime validation
+     ↓
+package + SHA-256
+```
+
+Les sorties réelles sont conservées sous `evidence/`. Les logs et packages générés ne doivent jamais exposer de secrets.
+
+`package.sh` exclut notamment Vault réel, `.vault_pass`, inventaire/host vars réels, environnements Python et clés privées.
+
+La qualification finale attend `/health/` et `/health/database/` en HTTP 200 ainsi qu'une seconde exécution de `site.yml` avec `changed=0` sur `app1` et `db1`. Ces résultats ne sont considérés comme acquis qu'après exécution réelle.

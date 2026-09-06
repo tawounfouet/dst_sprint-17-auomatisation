@@ -9,7 +9,7 @@ django_config_dir: /etc/datascientest-django
 django_environment_file: "{{ django_config_dir }}/django.env"
 django_service_name: datascientest-django
 django_settings_module: config.settings
-django_allowed_hosts: "*"
+django_allowed_hosts: "localhost,127.0.0.1,{{ inventory_hostname }},{{ ansible_host | default(inventory_hostname) }}"
 django_debug: false
 django_gunicorn_bind: 127.0.0.1:8000
 django_gunicorn_workers: 3
@@ -17,7 +17,7 @@ django_gunicorn_workers: 3
 postgresql_database: django_app
 postgresql_user: django_app
 postgresql_port: 5432
-postgresql_host: "{{ hostvars[groups['database'][0]].ansible_host | default(groups['database'][0]) }}"
+postgresql_host: "{{ hostvars[groups['database'][0]].ansible_host }}"
 postgresql_password: "{{ vault_postgresql_password }}"
 
 django_secret_key: "{{ vault_django_secret_key }}"
