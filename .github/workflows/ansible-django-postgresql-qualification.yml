@@ -1,4 +1,4 @@
-name: Ansible Django PostgreSQL Qualification
+name: Ansible Django PostgreSQL E2E Final
 
 on:
   push:
@@ -12,10 +12,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ansible-django-postgresql-final-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  e2e-idempotence:
+  final-e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
       PROJECT_DIR: 191 - Ansible DevOps/Projet_Final/django-postgresql/ansible-project
       E2E_CHECK_IDEMPOTENCE: '1'
@@ -34,17 +38,64 @@ jobs:
           ansible-galaxy collection install -r requirements.yml
           ansible-galaxy collection install -r requirements-e2e.yml
 
-      - name: Run E2E and strict idempotence qualification
+      - name: Run full E2E and strict idempotence qualification
         working-directory: ${{ env.PROJECT_DIR }}
         run: bash tests/e2e/run_first_qualification.sh
 
-      - name: Upload qualification evidence
-        if: always()
+      - name: Build and verify qualified package
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -Eeuo pipefail
+          PACKAGE_DIR="$RUNNER_TEMP/ansible-django-postgresql-package"
+          mkdir -p "$PACKAGE_DIR"
+          export PACKAGE_OUTPUT_DIR="$PACKAGE_DIR"
+
+          bash scripts/package.sh | tee "$PACKAGE_DIR/package.log"
+
+          ARCHIVE="$(find "$PACKAGE_DIR" -maxdepth 1 -type f -name 'django-postgresql-ansible-*.zip' -print -quit)"
+          test -n "$ARCHIVE"
+          CHECKSUM="$ARCHIVE.sha256"
+          test -f "$CHECKSUM"
+
+          sha256sum -c "$CHECKSUM"
+          bash tests/package_safety_check.sh "$ARCHIVE"
+
+          PACKAGE_SHA="$(awk '{print $1}' "$CHECKSUM")"
+          EVIDENCE_DIR="../evidence/validation"
+          MANIFEST="$EVIDENCE_DIR/final-ci-${GITHUB_RUN_ID}.txt"
+          {
+            echo "workflow=Ansible Django PostgreSQL E2E Final"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "git_sha=${GITHUB_SHA}"
+            echo "archive=$(basename "$ARCHIVE")"
+            echo "sha256=${PACKAGE_SHA}"
+            echo "idempotence_app1=changed=0"
+            echo "idempotence_db1=changed=0"
+          } | tee "$MANIFEST"
+
+          echo "PACKAGE_DIR=$PACKAGE_DIR" >> "$GITHUB_ENV"
+          echo "QUALIFIED_ARCHIVE=$(basename "$ARCHIVE")" >> "$GITHUB_ENV"
+          echo "QUALIFIED_SHA256=$PACKAGE_SHA" >> "$GITHUB_ENV"
+
+      - name: Upload failure diagnostics
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ansible-django-postgresql-lot11-evidence
+          name: ansible-django-postgresql-failure-${{ github.run_id }}
           path: |
             191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/logs/*.txt
             191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/validation/*
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload qualified project and evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-django-postgresql-qualified-${{ github.run_id }}
+          path: |
+            ${{ env.PACKAGE_DIR }}/*
+            191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/logs/*.txt
+            191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/validation/*
+          if-no-files-found: error
           retention-days: 14
