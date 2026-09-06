@@ -2,8 +2,8 @@
 - name: Validate PostgreSQL role prerequisites
   ansible.builtin.assert:
     that:
-      - ansible_distribution == 'Ubuntu'
-      - ansible_distribution_version is version('24.04', '>=')
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] is version('24.04', '>=')
       - vault_postgresql_password is defined
       - vault_postgresql_password | length > 0
       - postgresql_allowed_cidrs | length > 0
