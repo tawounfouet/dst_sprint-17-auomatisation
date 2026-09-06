@@ -111,15 +111,19 @@ jobs:
 
       - name: Verify external HTTP from control node
         run: |
-          WEB_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' web1)"
+          WEB_IP="$(docker inspect -f '{{with index .NetworkSettings.Networks "ansible-e2e"}}{{.IPAddress}}{{end}}' web1)"
+          echo "web1 IP: $WEB_IP"
+          test -n "$WEB_IP"
           curl --fail --show-error --location --max-time 30 "http://$WEB_IP/" -o /tmp/prestashop-front.html
           test -s /tmp/prestashop-front.html
+          echo "HTTP bytes: $(wc -c < /tmp/prestashop-front.html)"
 
       - name: Second deployment must be idempotent
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           ./scripts/run_exam.sh
           SECOND_LOG="$(ls -1t ../evidence/logs/deploy-*.txt | head -1)"
+          echo "Second-run log: $SECOND_LOG"
           tail -n 20 "$SECOND_LOG"
           ! grep -Eq 'changed=[1-9][0-9]*' "$SECOND_LOG"
 
