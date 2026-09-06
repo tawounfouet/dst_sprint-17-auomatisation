@@ -1,0 +1,8 @@
+# Local lab files
+inventaire.yaml
+group_vars/production.yaml
+host_vars/serveurweb1.yaml
+.vault_pass
+*.retry
+*.log
+.DS_Store

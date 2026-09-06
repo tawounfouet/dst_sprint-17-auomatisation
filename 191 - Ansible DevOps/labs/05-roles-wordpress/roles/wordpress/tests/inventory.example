@@ -1,0 +1,2 @@
+[production]
+serveurweb1 ansible_host=<IP_CIBLE1> ansible_user=datascientest

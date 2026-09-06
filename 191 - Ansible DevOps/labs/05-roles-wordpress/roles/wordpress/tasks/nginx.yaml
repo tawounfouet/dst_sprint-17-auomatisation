@@ -1,0 +1,34 @@
+---
+- name: Nginx - Déterminer la version PHP-FPM
+  ansible.builtin.shell: >-
+    dpkg -l | grep php-fpm | awk '{print $3}' |
+    grep -o '[0-9]\.[0-9]' | head -n 1
+  register: php_ver
+  changed_when: false
+
+- name: Nginx - Démarrer PHP-FPM
+  ansible.builtin.service:
+    name: "php{{ php_ver.stdout }}-fpm"
+    state: started
+
+- name: Nginx - Démarrer Nginx
+  ansible.builtin.service:
+    name: nginx
+    state: started
+
+- name: Nginx - Supprimer le vhost par défaut
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify:
+    - Nginx - Redémarrage
+
+- name: Nginx - Déployer le vhost WordPress
+  ansible.builtin.template:
+    src: nginx-vhost.j2
+    dest: /etc/nginx/conf.d/wordpress.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Nginx - Redémarrage

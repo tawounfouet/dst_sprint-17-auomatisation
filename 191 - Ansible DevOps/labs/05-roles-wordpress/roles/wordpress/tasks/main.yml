@@ -1,0 +1,77 @@
+---
+- name: WordPress - Installer PHP et dépendances
+  ansible.builtin.apt:
+    name:
+      - php-fpm
+      - php-curl
+      - php-gd
+      - php-mysql
+      - php-mbstring
+      - php-xml
+      - php-zip
+    update_cache: true
+    state: present
+
+- name: WordPress - Installer Nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+  when: wp_webserver == "nginx"
+
+- name: WordPress - Supprimer la page HTML par défaut
+  ansible.builtin.file:
+    path: /var/www/html/index.html
+    state: absent
+
+- name: WordPress - Extraire l'archive
+  ansible.builtin.unarchive:
+    src: "https://wordpress.org/wordpress-{{ wp_version }}.tar.gz"
+    dest: "{{ wp_install_dir }}"
+    remote_src: true
+
+- name: WordPress - Récupérer les sels aléatoires
+  ansible.builtin.uri:
+    url: https://api.wordpress.org/secret-key/1.1/salt/
+    return_content: true
+  delegate_to: localhost
+  become: false
+  register: wp_salt_array
+
+- name: WordPress - Définir le fait wp_salt
+  ansible.builtin.set_fact:
+    wp_salt: "{{ wp_salt_array.content }}"
+
+- name: WordPress - Déployer wp-config.php
+  ansible.builtin.template:
+    src: wp-config.php.j2
+    dest: "{{ wp_install_dir }}/wordpress/wp-config.php"
+    owner: www-data
+    group: www-data
+    mode: "0640"
+
+- name: WordPress - Configurer Nginx
+  ansible.builtin.include_tasks: nginx.yaml
+  when: wp_webserver == "nginx"
+
+- name: MySQL - Installer mysql-server
+  ansible.builtin.apt:
+    name: mysql-server
+    state: present
+  when: ansible_distribution == 'Ubuntu'
+
+- name: MySQL - Installer les dépendances
+  ansible.builtin.apt:
+    name:
+      - php-mysql
+      - python3-pymysql
+    state: present
+  notify:
+    - Nginx - Redémarrage
+
+- name: MySQL - Démarrer le service
+  ansible.builtin.service:
+    name: mysql
+    state: started
+
+# La création de la base et de l'utilisateur applicatif est finalisée
+# dans le Lab 06 après chiffrement des variables sensibles avec Vault.

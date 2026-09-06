@@ -1,0 +1,11 @@
+---
+galaxy_info:
+  author: datascientest
+  description: Rôle pédagogique WordPress pour le Sprint 17 Ansible
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+
+dependencies: []

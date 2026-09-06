@@ -1,0 +1,3 @@
+---
+# Variables réservées au rôle lorsqu'une valeur doit être imposée.
+# Le TP principal utilise surtout defaults/main.yml et group_vars/.

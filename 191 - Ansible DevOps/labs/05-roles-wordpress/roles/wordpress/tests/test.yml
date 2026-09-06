@@ -1,0 +1,6 @@
+---
+- name: Test du rôle WordPress
+  hosts: production
+  become: true
+  roles:
+    - wordpress
