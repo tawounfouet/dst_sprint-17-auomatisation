@@ -1,0 +1,23 @@
+# Local inventory values
+inventaire.ini
+inventaire.debug.ini
+
+# SSH / secrets
+*.pem
+*.key
+id_rsa
+id_ed25519
+.vault_pass
+.env
+.env.*
+
+# Runtime
+*.retry
+*.log
+.ansible/
+.fact_cache/
+
+# Local OS / editors
+.DS_Store
+.vscode/
+.idea/

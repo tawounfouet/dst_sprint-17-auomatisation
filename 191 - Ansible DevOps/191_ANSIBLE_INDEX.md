@@ -9,7 +9,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 | Ordre | Document | Statut |
 |---:|---|---|
 | 1 | `191.01_ANSIBLE_INTRODUCTION_ET_INSTALLATION.md` | ✅ Canonique |
-| 2 | `191.02_ANSIBLE_MODULES_ET_COMMANDES_AD_HOC.md` | ⏳ À produire |
+| 2 | `191.02_ANSIBLE_MODULES_ET_COMMANDES_AD_HOC.md` | ✅ Canonique |
 | 3 | `191.03_ANSIBLE_INVENTAIRES.md` | ⏳ À produire |
 | 4 | `191.04_ANSIBLE_PLAYBOOKS.md` | ⏳ À produire |
 | 5 | `191.05_ANSIBLE_ROLES.md` | ⏳ À produire |
@@ -34,7 +34,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 | Ordre | Laboratoire | Statut |
 |---:|---|---|
 | 1 | `labs/01-multipass-bootstrap/` | ✅ Bootstrap reproductible |
-| 2 | `labs/02-modules-ad-hoc/` | ⏳ |
+| 2 | `labs/02-modules-ad-hoc/` | ✅ Modules et commandes ad hoc |
 | 3 | `labs/03-inventory/` | ⏳ |
 | 4 | `labs/04-playbooks/` | ⏳ |
 | 5 | `labs/05-roles-wordpress/` | ⏳ |
@@ -63,6 +63,26 @@ ansible-master
 avec quatre VM Ubuntu 24.04, l'utilisateur `datascientest`, une configuration SSH adaptée au TP, un `ansible.cfg` minimal et un script Python d'inventaire Multipass.
 
 Les secrets présents dans les sources pédagogiques ne sont pas repris tels quels : le lab publié utilise des placeholders explicites.
+
+### Lab 02 — Modules et commandes ad hoc
+
+Le second laboratoire exploite l'infrastructure du lab 01 pour pratiquer :
+
+```text
+ping
+copy
+setup
+file
+apt
+service
+command
+shell
+ansible-doc
+become (-b)
+debugging -vvvv
+```
+
+Il fournit un inventaire d'exemple sans IP réelle, un fichier de test et un script de qualification non destructif.
 
 ## Examen
 
@@ -104,9 +124,9 @@ Les ressources historiques ne sont pas considérées comme documentation active.
           ↓
 [3] 191.01                              ✅
           ↓
-[4] 191.02 + Lab 02                     ⏭️ NEXT
+[4] 191.02 + Lab 02                     ✅
           ↓
-[5] 191.03 + Lab 03
+[5] 191.03 + Lab 03                     ⏭️ NEXT
           ↓
 [6] 191.04 + Lab 04
           ↓
