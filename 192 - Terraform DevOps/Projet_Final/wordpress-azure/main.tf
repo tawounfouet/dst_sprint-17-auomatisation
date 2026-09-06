@@ -20,58 +20,58 @@ resource "azurerm_resource_group" "this" {
 module "networking" {
   source = "./modules/networking"
 
-  project_name     = var.project_name
-  environment      = var.environment
-  resource_group   = azurerm_resource_group.this.name
-  location         = azurerm_resource_group.this.location
-  vnet_cidr        = var.vnet_cidr
-  app_subnet_cidr  = var.app_subnet_cidr
-  db_subnet_cidr   = var.db_subnet_cidr
-  ssh_cidr         = var.ssh_cidr
-  enable_https     = var.enable_https
-  tags             = local.common_tags
+  project_name    = var.project_name
+  environment     = var.environment
+  resource_group  = azurerm_resource_group.this.name
+  location        = azurerm_resource_group.this.location
+  vnet_cidr       = var.vnet_cidr
+  app_subnet_cidr = var.app_subnet_cidr
+  db_subnet_cidr  = var.db_subnet_cidr
+  ssh_cidr        = var.ssh_cidr
+  enable_https    = var.enable_https
+  tags            = local.common_tags
 }
 
 module "mysql" {
   source = "./modules/mysql"
 
-  project_name             = var.project_name
-  environment              = var.environment
-  resource_group           = azurerm_resource_group.this.name
-  location                 = azurerm_resource_group.this.location
-  delegated_subnet_id      = module.networking.db_subnet_id
-  private_dns_zone_id      = module.networking.mysql_private_dns_zone_id
-  sku_name                 = var.mysql_sku_name
-  primary_zone             = var.mysql_primary_zone
-  standby_zone             = var.mysql_standby_zone
-  enable_ha                = var.mysql_enable_ha
-  admin_username           = var.mysql_admin_username
-  database_name            = var.mysql_database_name
-  storage_gb               = var.mysql_storage_gb
-  tags                     = local.common_tags
+  project_name        = var.project_name
+  environment         = var.environment
+  resource_group      = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  delegated_subnet_id = module.networking.db_subnet_id
+  private_dns_zone_id = module.networking.mysql_private_dns_zone_id
+  sku_name            = var.mysql_sku_name
+  primary_zone        = var.mysql_primary_zone
+  standby_zone        = var.mysql_standby_zone
+  enable_ha           = var.mysql_enable_ha
+  admin_username      = var.mysql_admin_username
+  database_name       = var.mysql_database_name
+  storage_gb          = var.mysql_storage_gb
+  tags                = local.common_tags
 }
 
 module "vm" {
   source = "./modules/vm"
 
-  project_name        = var.project_name
-  environment         = var.environment
-  resource_group      = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
-  subnet_id           = module.networking.app_subnet_id
+  project_name              = var.project_name
+  environment               = var.environment
+  resource_group            = azurerm_resource_group.this.name
+  location                  = azurerm_resource_group.this.location
+  subnet_id                 = module.networking.app_subnet_id
   network_security_group_id = module.networking.web_nsg_id
-  vm_size             = var.vm_size
-  zone                = var.vm_zone
-  admin_username      = var.admin_username
-  ssh_public_key      = var.ssh_public_key
-  mysql_fqdn          = module.mysql.fqdn
-  mysql_database_name = var.mysql_database_name
-  mysql_admin_username = var.mysql_admin_username
-  key_vault_id        = module.mysql.key_vault_id
-  key_vault_uri       = module.mysql.key_vault_uri
-  db_secret_name      = module.mysql.db_secret_name
-  enable_https        = var.enable_https
-  tags                = local.common_tags
+  vm_size                   = var.vm_size
+  zone                      = var.vm_zone
+  admin_username            = var.admin_username
+  ssh_public_key            = var.ssh_public_key
+  mysql_fqdn                = module.mysql.fqdn
+  mysql_database_name       = var.mysql_database_name
+  mysql_admin_username      = var.mysql_admin_username
+  key_vault_id              = module.mysql.key_vault_id
+  key_vault_uri             = module.mysql.key_vault_uri
+  db_secret_name            = module.mysql.db_secret_name
+  enable_https              = var.enable_https
+  tags                      = local.common_tags
 }
 
 module "disk" {
