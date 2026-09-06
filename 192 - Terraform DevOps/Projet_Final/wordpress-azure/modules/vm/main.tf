@@ -52,7 +52,7 @@ resource "azurerm_linux_virtual_machine" "wordpress" {
 
   source_image_reference {
     publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-noble"
+    offer     = "ubuntu-24_04-lts"
     sku       = "server"
     version   = "latest"
   }
