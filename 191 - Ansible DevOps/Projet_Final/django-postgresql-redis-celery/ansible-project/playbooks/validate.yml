@@ -1,0 +1,226 @@
+---
+- name: Validate Django PostgreSQL deployment topology
+  hosts: localhost
+  gather_facts: false
+  become: false
+  tags:
+    - always
+    - topology
+    - validation
+  tasks:
+    - name: Validate required inventory groups
+      ansible.builtin.assert:
+        that:
+          - "'app' in groups"
+          - "'database' in groups"
+          - "groups['app'] | length == 1"
+          - "groups['database'] | length == 1"
+        fail_msg: >-
+          Runtime validation expects exactly one host in group 'app'
+          and exactly one host in group 'database'.
+        quiet: true
+
+- name: Validate PostgreSQL database tier
+  hosts: database
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags:
+    - validation
+    - database
+    - postgresql
+  tasks:
+    - name: Check PostgreSQL service is active
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ postgresql_service_name | default('postgresql') }}"
+      register: validate_postgresql_service
+      changed_when: false
+      failed_when: >-
+        validate_postgresql_service.rc != 0 or
+        (validate_postgresql_service.stdout | trim) != 'active'
+
+    - name: Wait for PostgreSQL local port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ postgresql_port | default(5432) }}"
+        state: started
+        connect_timeout: 3
+        timeout: 15
+
+    - name: Query Django PostgreSQL database existence
+      community.postgresql.postgresql_query:
+        login_db: postgres
+        query: >-
+          SELECT EXISTS(
+            SELECT 1 FROM pg_database WHERE datname = %(database_name)s
+          ) AS exists
+        named_args:
+          database_name: "{{ postgresql_database }}"
+      become_user: postgres
+      register: validate_postgresql_database
+      changed_when: false
+
+    - name: Assert Django PostgreSQL database exists
+      ansible.builtin.assert:
+        that:
+          - validate_postgresql_database.query_result[0].exists | bool
+        fail_msg: "PostgreSQL database {{ postgresql_database }} does not exist."
+        quiet: true
+
+    - name: Query Django PostgreSQL role existence
+      community.postgresql.postgresql_query:
+        login_db: postgres
+        query: >-
+          SELECT EXISTS(
+            SELECT 1 FROM pg_roles WHERE rolname = %(role_name)s
+          ) AS exists
+        named_args:
+          role_name: "{{ postgresql_user }}"
+      become_user: postgres
+      register: validate_postgresql_role
+      changed_when: false
+
+    - name: Assert Django PostgreSQL role exists
+      ansible.builtin.assert:
+        that:
+          - validate_postgresql_role.query_result[0].exists | bool
+        fail_msg: "PostgreSQL role {{ postgresql_user }} does not exist."
+        quiet: true
+
+- name: Validate Django application tier
+  hosts: app
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags:
+    - validation
+    - app
+    - django
+    - nginx
+  vars:
+    validation_http_host_header: "{{ inventory_hostname }}"
+    validation_base_url: "http://127.0.0.1:{{ nginx_listen_port | default(80) }}"
+  tasks:
+    - name: Check Django Gunicorn service is active
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ django_service_name | default('datascientest-django') }}"
+      register: validate_django_service
+      changed_when: false
+      failed_when: >-
+        validate_django_service.rc != 0 or
+        (validate_django_service.stdout | trim) != 'active'
+
+    - name: Wait for Gunicorn local port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ (django_gunicorn_bind.split(':')[-1] | int) if django_gunicorn_bind is defined else 8000 }}"
+        state: started
+        connect_timeout: 3
+        timeout: 15
+
+    - name: Check Nginx service is active
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - nginx
+      register: validate_nginx_service
+      changed_when: false
+      failed_when: >-
+        validate_nginx_service.rc != 0 or
+        (validate_nginx_service.stdout | trim) != 'active'
+
+    - name: Validate Nginx configuration syntax
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/nginx
+          - -t
+      changed_when: false
+
+    - name: Wait for Nginx HTTP port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ nginx_listen_port | default(80) }}"
+        state: started
+        connect_timeout: 3
+        timeout: 15
+
+    - name: Verify app tier can reach PostgreSQL
+      ansible.builtin.wait_for:
+        host: "{{ postgresql_host }}"
+        port: "{{ postgresql_port | default(5432) }}"
+        state: started
+        connect_timeout: 3
+        timeout: 15
+
+    - name: Validate application root endpoint
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/"
+        method: GET
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        status_code: 200
+        return_content: true
+
+    - name: Validate Django liveness endpoint
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/health/"
+        method: GET
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        status_code: 200
+        return_content: true
+      register: validate_http_health
+
+    - name: Assert Django liveness payload
+      ansible.builtin.assert:
+        that:
+          - validate_http_health.json.status == 'healthy'
+        fail_msg: "Django /health/ payload does not satisfy the runtime contract."
+        quiet: true
+
+    - name: Validate Django to PostgreSQL health endpoint
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/health/database/"
+        method: GET
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        status_code: 200
+        return_content: true
+      register: validate_http_database_health
+
+    - name: Assert Django to PostgreSQL health payload
+      ansible.builtin.assert:
+        that:
+          - validate_http_database_health.json.status == 'healthy'
+          - validate_http_database_health.json.database == 'connected'
+          - validate_http_database_health.json.query | int == 1
+        fail_msg: >-
+          Django /health/database/ did not prove the expected
+          Django -> PostgreSQL SELECT 1 path.
+        quiet: true
+
+    - name: Validate application information endpoint
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/api/info/"
+        method: GET
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        status_code: 200
+        return_content: true
+      register: validate_http_info
+
+    - name: Assert application information payload
+      ansible.builtin.assert:
+        that:
+          - validate_http_info.json.application == 'datascientest-ansible-django'
+          - validate_http_info.json.runtime == 'gunicorn'
+          - validate_http_info.json.database == 'postgresql'
+        fail_msg: "Django /api/info/ payload does not satisfy the runtime contract."
+        quiet: true

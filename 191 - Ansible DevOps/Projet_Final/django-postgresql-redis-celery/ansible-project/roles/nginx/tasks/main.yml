@@ -1,0 +1,76 @@
+---
+- name: Install Nginx packages
+  ansible.builtin.apt:
+    name: "{{ nginx_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check Django static directory exists
+  ansible.builtin.stat:
+    path: "{{ nginx_static_root }}"
+  register: nginx_static_root_stat
+
+- name: Validate Django static directory
+  ansible.builtin.assert:
+    that:
+      - nginx_static_root_stat.stat.exists
+      - nginx_static_root_stat.stat.isdir
+    fail_msg: >-
+      Django static directory {{ nginx_static_root }} is missing.
+      Run the django_app role and collectstatic before nginx.
+    quiet: true
+
+- name: Wait for Gunicorn upstream
+  ansible.builtin.wait_for:
+    host: "{{ nginx_upstream_host }}"
+    port: "{{ nginx_upstream_port }}"
+    timeout: 30
+    state: started
+
+- name: Render Django Nginx site
+  ansible.builtin.template:
+    src: django.conf.j2
+    dest: "{{ nginx_site_available_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload Nginx
+
+- name: Disable default Nginx site
+  ansible.builtin.file:
+    path: "{{ nginx_sites_enabled_dir }}/default"
+    state: absent
+  notify: Reload Nginx
+
+- name: Enable Django Nginx site
+  ansible.builtin.file:
+    src: "{{ nginx_site_available_path }}"
+    dest: "{{ nginx_site_enabled_path }}"
+    state: link
+    force: true
+  notify: Reload Nginx
+
+- name: Validate Nginx configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/nginx
+      - -t
+  register: nginx_config_test
+  changed_when: false
+
+- name: Enable and start Nginx
+  ansible.builtin.systemd_service:
+    name: "{{ nginx_service_name }}"
+    enabled: true
+    state: started
+
+- name: Flush Nginx reload handler after successful validation
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Nginx HTTP listener
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ nginx_listen_port }}"
+    timeout: 30
+    state: started

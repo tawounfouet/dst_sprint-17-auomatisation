@@ -1,0 +1,19 @@
+[Unit]
+Description=DataScientest Django application (Gunicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ django_system_user }}
+Group={{ django_system_group }}
+WorkingDirectory={{ django_install_dir }}
+EnvironmentFile={{ django_environment_file }}
+ExecStart={{ django_venv_dir }}/bin/gunicorn --workers {{ django_gunicorn_workers }} --bind {{ django_gunicorn_bind }} {{ django_settings_module | regex_replace('\.settings$', '') }}.wsgi:application
+Restart=on-failure
+RestartSec=3
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

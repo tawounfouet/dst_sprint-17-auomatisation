@@ -1,0 +1,15 @@
+---
+django_app_name: datascientest_django
+django_system_user: django
+django_system_group: django
+django_install_dir: /opt/datascientest-django
+django_venv_dir: /opt/datascientest-django/.venv
+django_settings_module: config.settings
+django_allowed_hosts: "localhost,127.0.0.1,{{ groups['app'][0] }},{{ hostvars[groups['app'][0]].ansible_host }}"
+django_debug: false
+django_gunicorn_bind: 127.0.0.1:8000
+postgresql_database: django_app
+postgresql_user: django_app
+postgresql_port: 5432
+postgresql_host: "{{ hostvars[groups['database'][0]].ansible_host }}"
+postgresql_app_cidr: "{{ hostvars[groups['app'][0]].ansible_host }}/32"
