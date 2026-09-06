@@ -38,9 +38,9 @@
           - "{{ postgresql_service_name | default('postgresql') }}"
       register: validate_postgresql_service
       changed_when: false
-      failed_when:
-        - validate_postgresql_service.rc != 0
-        - validate_postgresql_service.stdout | trim != 'active'
+      failed_when: >-
+        validate_postgresql_service.rc != 0 or
+        (validate_postgresql_service.stdout | trim) != 'active'
 
     - name: Wait for PostgreSQL local port
       ansible.builtin.wait_for:
@@ -63,9 +63,9 @@
       become_user: postgres
       register: validate_postgresql_database
       changed_when: false
-      failed_when:
-        - validate_postgresql_database.rc != 0
-        - validate_postgresql_database.stdout | trim != '1'
+      failed_when: >-
+        validate_postgresql_database.rc != 0 or
+        (validate_postgresql_database.stdout | trim) != '1'
 
     - name: Verify Django PostgreSQL role exists
       ansible.builtin.command:
@@ -80,9 +80,9 @@
       become_user: postgres
       register: validate_postgresql_role
       changed_when: false
-      failed_when:
-        - validate_postgresql_role.rc != 0
-        - validate_postgresql_role.stdout | trim != '1'
+      failed_when: >-
+        validate_postgresql_role.rc != 0 or
+        (validate_postgresql_role.stdout | trim) != '1'
 
 - name: Validate Django application tier
   hosts: app
@@ -106,9 +106,9 @@
           - "{{ django_service_name | default('datascientest-django') }}"
       register: validate_django_service
       changed_when: false
-      failed_when:
-        - validate_django_service.rc != 0
-        - validate_django_service.stdout | trim != 'active'
+      failed_when: >-
+        validate_django_service.rc != 0 or
+        (validate_django_service.stdout | trim) != 'active'
 
     - name: Wait for Gunicorn local port
       ansible.builtin.wait_for:
@@ -126,16 +126,15 @@
           - nginx
       register: validate_nginx_service
       changed_when: false
-      failed_when:
-        - validate_nginx_service.rc != 0
-        - validate_nginx_service.stdout | trim != 'active'
+      failed_when: >-
+        validate_nginx_service.rc != 0 or
+        (validate_nginx_service.stdout | trim) != 'active'
 
     - name: Validate Nginx configuration syntax
       ansible.builtin.command:
         argv:
           - /usr/sbin/nginx
           - -t
-      register: validate_nginx_syntax
       changed_when: false
 
     - name: Wait for Nginx HTTP port
@@ -162,7 +161,6 @@
           Host: "{{ validation_http_host_header }}"
         status_code: 200
         return_content: true
-      register: validate_http_root
 
     - name: Validate Django liveness endpoint
       ansible.builtin.uri:
