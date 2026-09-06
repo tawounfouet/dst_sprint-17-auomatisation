@@ -1,0 +1,12 @@
+# Local Vault files
+.vault_pass
+group_vars/production.yaml
+
+# Local WordPress lab copies
+inventaire.yaml
+host_vars/serveurweb1.yaml
+
+# Runtime
+*.retry
+.ansible/
+*.log
