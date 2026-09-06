@@ -114,7 +114,10 @@ jobs:
           WEB_IP="$(docker inspect -f '{{with index .NetworkSettings.Networks "ansible-e2e"}}{{.IPAddress}}{{end}}' web1)"
           echo "web1 IP: $WEB_IP"
           test -n "$WEB_IP"
-          curl --fail --show-error --location --max-time 30 "http://$WEB_IP/" -o /tmp/prestashop-front.html
+          curl --fail --show-error --location --max-time 30 \
+            --resolve "web1:80:$WEB_IP" \
+            "http://web1/" \
+            -o /tmp/prestashop-front.html
           test -s /tmp/prestashop-front.html
           echo "HTTP bytes: $(wc -c < /tmp/prestashop-front.html)"
 
