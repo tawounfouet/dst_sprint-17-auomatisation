@@ -49,29 +49,30 @@ module "mysql" {
   database_name       = var.mysql_database_name
   storage_gb          = var.mysql_storage_gb
   tags                = local.common_tags
+
+  depends_on = [module.networking]
 }
 
 module "vm" {
   source = "./modules/vm"
 
-  project_name              = var.project_name
-  environment               = var.environment
-  resource_group            = azurerm_resource_group.this.name
-  location                  = azurerm_resource_group.this.location
-  subnet_id                 = module.networking.app_subnet_id
-  network_security_group_id = module.networking.web_nsg_id
-  vm_size                   = var.vm_size
-  zone                      = var.vm_zone
-  admin_username            = var.admin_username
-  ssh_public_key            = var.ssh_public_key
-  mysql_fqdn                = module.mysql.fqdn
-  mysql_database_name       = var.mysql_database_name
-  mysql_admin_username      = var.mysql_admin_username
-  key_vault_id              = module.mysql.key_vault_id
-  key_vault_uri             = module.mysql.key_vault_uri
-  db_secret_name            = module.mysql.db_secret_name
-  enable_https              = var.enable_https
-  tags                      = local.common_tags
+  project_name         = var.project_name
+  environment          = var.environment
+  resource_group       = azurerm_resource_group.this.name
+  location             = azurerm_resource_group.this.location
+  subnet_id            = module.networking.app_subnet_id
+  vm_size              = var.vm_size
+  zone                 = var.vm_zone
+  admin_username       = var.admin_username
+  ssh_public_key       = var.ssh_public_key
+  mysql_fqdn           = module.mysql.fqdn
+  mysql_database_name  = var.mysql_database_name
+  mysql_admin_username = var.mysql_admin_username
+  key_vault_id         = module.mysql.key_vault_id
+  key_vault_uri        = module.mysql.key_vault_uri
+  db_secret_name       = module.mysql.db_secret_name
+  enable_https         = var.enable_https
+  tags                 = local.common_tags
 }
 
 module "disk" {
