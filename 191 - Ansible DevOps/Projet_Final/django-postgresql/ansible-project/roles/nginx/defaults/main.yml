@@ -1,0 +1,23 @@
+---
+nginx_packages:
+  - nginx
+
+nginx_service_name: nginx
+nginx_site_name: datascientest-django
+nginx_listen_port: 80
+nginx_server_name: "_"
+nginx_client_max_body_size: 10m
+
+nginx_sites_available_dir: /etc/nginx/sites-available
+nginx_sites_enabled_dir: /etc/nginx/sites-enabled
+nginx_site_available_path: "{{ nginx_sites_available_dir }}/{{ nginx_site_name }}"
+nginx_site_enabled_path: "{{ nginx_sites_enabled_dir }}/{{ nginx_site_name }}"
+
+nginx_upstream_host: 127.0.0.1
+nginx_upstream_port: 8000
+nginx_static_url: /static/
+nginx_static_root: "{{ django_install_dir }}/staticfiles"
+
+nginx_proxy_connect_timeout: 5s
+nginx_proxy_read_timeout: 60s
+nginx_proxy_send_timeout: 60s
