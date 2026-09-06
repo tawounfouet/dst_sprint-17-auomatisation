@@ -20,6 +20,15 @@ postgresql_port: 5432
 postgresql_host: "{{ hostvars[groups['database'][0]].ansible_host }}"
 postgresql_password: "{{ vault_postgresql_password }}"
 
+redis_host: 127.0.0.1
+redis_port: 6379
+redis_broker_database: 0
+redis_result_database: 1
+redis_password: "{{ vault_redis_password }}"
+celery_broker_url: "redis://:{{ redis_password | urlencode }}@{{ redis_host }}:{{ redis_port }}/{{ redis_broker_database }}"
+celery_result_backend: "redis://:{{ redis_password | urlencode }}@{{ redis_host }}:{{ redis_port }}/{{ redis_result_database }}"
+celery_result_expires: 3600
+
 django_secret_key: "{{ vault_django_secret_key }}"
 
 django_packages:

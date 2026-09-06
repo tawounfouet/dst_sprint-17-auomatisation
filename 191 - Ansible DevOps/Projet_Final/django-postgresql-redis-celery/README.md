@@ -8,8 +8,9 @@ Variante dérivée du projet `django-postgresql/` afin d'ajouter Redis et Celery
 BASELINE COPIED          ✅
 ARCHITECTURE / CONTRACTS ✅
 PYTHON DEPENDENCIES      ✅
+DJANGO / CELERY CONFIG   ✅
 REDIS IMPLEMENTATION     ⏳
-CELERY IMPLEMENTATION    ⏳
+CELERY WORKER            ⏳
 ASYNC TASK API           ⏳
 E2E QUALIFICATION        ⏳
 IDEMPOTENCE              ⏳
@@ -28,7 +29,7 @@ Branche         : feat/ansible-django-postgresql-project
 
 Le projet source a été qualifié en mono-host sur Ubuntu 24.04 avec Nginx, Gunicorn, Django et PostgreSQL. Cette preuve sert uniquement de référence de conception.
 
-## Architecture cible figée en RC-01
+## Architecture cible
 
 ```text
 Nginx :80
@@ -53,7 +54,7 @@ Le contrat réseau est :
 
 Redis sera utilisé comme broker Celery (`/0`) et result backend (`/1`), avec authentification et mot de passe fourni par Ansible Vault.
 
-## Dépendances Python — RC-02
+## Dépendances Python
 
 ```text
 Django>=5.2,<5.3
@@ -64,6 +65,35 @@ redis>=6,<7
 ```
 
 Le runtime conserve Python standard `venv` sous `.venv` ; aucune dépendance `virtualenv` n'est introduite.
+
+## Intégration Celery Django — RC-03
+
+L'application dispose désormais de :
+
+```text
+django-app/config/celery.py
+```
+
+et `config/__init__.py` expose l'application Celery.
+
+Django charge les paramètres depuis :
+
+```text
+CELERY_BROKER_URL
+CELERY_RESULT_BACKEND
+CELERY_RESULT_EXPIRES
+```
+
+avec sérialisation JSON et timezone alignée sur Django.
+
+Les URLs sont préparées par Ansible pour la topologie mono-host :
+
+```text
+broker  → Redis 127.0.0.1:6379/0
+result  → Redis 127.0.0.1:6379/1
+```
+
+Le secret Redis est référencé via `vault_redis_password`. Aucun worker Redis/Celery n'est encore qualifié à ce stade.
 
 ## Rôles cibles
 
@@ -82,8 +112,6 @@ Ordre prévu :
 common → postgresql → redis → django_app → celery → nginx
 ```
 
-Les rôles `redis` et `celery` ne sont pas encore implémentés à l'issue de RC-02.
-
 ## Tâches de démonstration cibles
 
 ```text
@@ -100,12 +128,22 @@ Le plan détaillé est défini dans [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_
 
 Les contrats d'architecture sont définis dans [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
+Les étapes sont documentées dans :
+
+```text
+RC_00_BASELINE_COPY.md
+RC_01_ARCHITECTURE_AND_CONTRACTS.md
+RC_02_PYTHON_DEPENDENCIES.md
+RC_03_DJANGO_CELERY_INTEGRATION.md
+```
+
 Étapes réalisées :
 
 ```text
-RC-00  Fork contrôlé de la baseline    ✅
-RC-01  Architecture et contrats        ✅
-RC-02  Dépendances Python              ✅
+RC-00  Fork contrôlé de la baseline       ✅
+RC-01  Architecture et contrats           ✅
+RC-02  Dépendances Python                 ✅
+RC-03  Intégration Celery dans Django     ✅
 ```
 
-Le prochain jalon est **RC-03 — Intégration Celery dans Django**.
+Le prochain jalon est **RC-04 — Tâches de démonstration + API asynchrone**.

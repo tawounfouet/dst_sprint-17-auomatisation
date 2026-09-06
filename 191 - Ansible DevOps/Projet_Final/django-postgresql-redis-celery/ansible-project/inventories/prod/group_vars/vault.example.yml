@@ -1,3 +1,4 @@
 ---
 vault_postgresql_password: CHANGE_ME_POSTGRES_PASSWORD
 vault_django_secret_key: CHANGE_ME_DJANGO_SECRET_KEY
+vault_redis_password: CHANGE_ME_REDIS_PASSWORD
