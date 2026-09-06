@@ -10,6 +10,7 @@ NETWORK="${E2E_NETWORK:-dst-ansible-django-e2e}"
 APP_CONTAINER="${E2E_APP_CONTAINER:-dst-django-app1}"
 DB_CONTAINER="${E2E_DB_CONTAINER:-dst-django-db1}"
 KEEP_TARGETS="${E2E_KEEP_TARGETS:-0}"
+CHECK_IDEMPOTENCE="${E2E_CHECK_IDEMPOTENCE:-0}"
 
 INVENTORY="$PROJECT_DIR/inventories/prod/hosts.yml"
 VAULT_FILE="$PROJECT_DIR/inventories/prod/group_vars/vault.yml"
@@ -27,10 +28,22 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
 }
 
+assert_zero_changes() {
+  local host="$1"
+  local logfile="$2"
+  local line changed
+  line="$(grep -E "^${host}[[:space:]]+:" "$logfile" | tail -n 1 || true)"
+  [[ -n "$line" ]] || fail "idempotence recap missing for $host"
+  changed="$(printf '%s\n' "$line" | sed -nE 's/.*changed=([0-9]+).*/\1/p')"
+  [[ -n "$changed" ]] || fail "unable to parse changed count for $host"
+  [[ "$changed" == "0" ]] || fail "$host is not idempotent: changed=$changed"
+  echo "IDEMPOTENCE PASS: $host changed=0"
+}
+
 collect_diagnostics() {
   local output="$EVIDENCE_DIR/validation/diagnostics-$TIMESTAMP.txt"
   {
-    echo "LOT 10 diagnostics"
+    echo "LOT 10/11 diagnostics"
     echo "timestamp=$TIMESTAMP"
     for container in "$APP_CONTAINER" "$DB_CONTAINER"; do
       echo "===== $container ====="
@@ -81,10 +94,10 @@ if docker network inspect "$NETWORK" >/dev/null 2>&1; then
   fail "Docker network already exists: $NETWORK"
 fi
 
-echo "== LOT 10 / static gate =="
+echo "== LOT 10/11 / static gate =="
 bash tests/static_checks.sh
 
-echo "== LOT 10 / provision Ubuntu 24.04 systemd targets =="
+echo "== LOT 10/11 / provision Ubuntu 24.04 systemd targets =="
 docker pull "$TARGET_IMAGE"
 docker network create "$NETWORK" >/dev/null
 
@@ -121,7 +134,7 @@ DB_IP="$(docker inspect -f "{{with index .NetworkSettings.Networks \"$NETWORK\"}
 [[ -n "$DB_IP" ]] || fail "db1 Docker IP could not be resolved"
 printf 'app1=%s\ndb1=%s\n' "$APP_IP" "$DB_IP" | tee "$EVIDENCE_DIR/validation/target-addresses-$TIMESTAMP.txt"
 
-echo "== LOT 10 / ephemeral inventory and encrypted Vault =="
+echo "== LOT 10/11 / ephemeral inventory and encrypted Vault =="
 cat >"$INVENTORY" <<EOF
 ---
 all:
@@ -195,3 +208,18 @@ PY
 } | tee "$EVIDENCE_DIR/validation/service-status-$TIMESTAMP.txt"
 
 echo "LOT 10 first E2E qualification passed."
+
+if [[ "$CHECK_IDEMPOTENCE" == "1" ]]; then
+  IDEMPOTENCE_LOG="$EVIDENCE_DIR/validation/idempotence-$TIMESTAMP.txt"
+  echo "== LOT 11 / second deployment with strict idempotence gate =="
+  set -o pipefail
+  ansible-playbook -i "$INVENTORY" playbooks/site.yml \
+    --vault-password-file "$VAULT_PASS_FILE" 2>&1 | tee "$IDEMPOTENCE_LOG"
+
+  assert_zero_changes app1 "$IDEMPOTENCE_LOG"
+  assert_zero_changes db1 "$IDEMPOTENCE_LOG"
+
+  echo "== LOT 11 / runtime validation after second deployment =="
+  bash scripts/validate_runtime.sh
+  echo "LOT 11 strict idempotence qualification passed."
+fi

@@ -13,11 +13,12 @@ permissions:
   contents: read
 
 jobs:
-  first-e2e:
+  e2e-idempotence:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       PROJECT_DIR: 191 - Ansible DevOps/Projet_Final/django-postgresql/ansible-project
+      E2E_CHECK_IDEMPOTENCE: '1'
 
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +34,7 @@ jobs:
           ansible-galaxy collection install -r requirements.yml
           ansible-galaxy collection install -r requirements-e2e.yml
 
-      - name: Run first end-to-end qualification
+      - name: Run E2E and strict idempotence qualification
         working-directory: ${{ env.PROJECT_DIR }}
         run: bash tests/e2e/run_first_qualification.sh
 
@@ -41,7 +42,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ansible-django-postgresql-lot10-evidence
+          name: ansible-django-postgresql-lot11-evidence
           path: |
             191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/logs/*.txt
             191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/validation/*
