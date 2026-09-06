@@ -1,0 +1,53 @@
+---
+- name: Validate supported operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == 'Debian'
+      - ansible_distribution == 'Ubuntu'
+      - ansible_distribution_version is version('24.04', '>=')
+    fail_msg: >-
+      The common role targets Ubuntu 24.04 or newer. Detected
+      {{ ansible_distribution }} {{ ansible_distribution_version }}.
+    quiet: true
+
+- name: Update APT cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ common_apt_cache_valid_time }}"
+
+- name: Install common system packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+
+- name: Check requested timezone data exists
+  ansible.builtin.stat:
+    path: "/usr/share/zoneinfo/{{ common_timezone }}"
+  register: common_timezone_file
+  when: common_manage_timezone | bool
+
+- name: Validate requested timezone
+  ansible.builtin.assert:
+    that:
+      - common_timezone_file.stat.exists
+      - common_timezone_file.stat.isreg | default(false)
+    fail_msg: "Unknown timezone: {{ common_timezone }}"
+    quiet: true
+  when: common_manage_timezone | bool
+
+- name: Configure /etc/localtime
+  ansible.builtin.file:
+    src: "/usr/share/zoneinfo/{{ common_timezone }}"
+    dest: /etc/localtime
+    state: link
+    force: true
+  when: common_manage_timezone | bool
+
+- name: Configure /etc/timezone
+  ansible.builtin.copy:
+    content: "{{ common_timezone }}\n"
+    dest: /etc/timezone
+    owner: root
+    group: root
+    mode: '0644'
+  when: common_manage_timezone | bool
