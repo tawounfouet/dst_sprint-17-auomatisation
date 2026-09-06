@@ -1,0 +1,26 @@
+---
+postgresql_version: "16"
+postgresql_cluster_name: main
+postgresql_service_name: postgresql
+postgresql_port: 5432
+postgresql_listen_addresses: "*"
+postgresql_password_encryption: scram-sha-256
+
+postgresql_database: django_app
+postgresql_user: django_app
+postgresql_password: "{{ vault_postgresql_password }}"
+
+postgresql_allowed_cidrs:
+  - "{{ postgresql_app_cidr }}"
+
+postgresql_packages:
+  - acl
+  - postgresql
+  - postgresql-contrib
+  - libpq-dev
+  - python3-psycopg2
+
+postgresql_config_dir: "/etc/postgresql/{{ postgresql_version }}/{{ postgresql_cluster_name }}"
+postgresql_main_config_file: "{{ postgresql_config_dir }}/postgresql.conf"
+postgresql_conf_d_dir: "{{ postgresql_config_dir }}/conf.d"
+postgresql_hba_file: "{{ postgresql_config_dir }}/pg_hba.conf"
