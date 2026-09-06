@@ -1,0 +1,51 @@
+---
+- name: Validate database tier
+  hosts: database
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check MySQL service
+      ansible.builtin.command: systemctl is-active mysql
+      changed_when: false
+
+    - name: Check MySQL listening port
+      ansible.builtin.wait_for:
+        port: "{{ mysql_port }}"
+        host: "{{ mysql_bind_address if mysql_bind_address != '0.0.0.0' else '127.0.0.1' }}"
+        timeout: 5
+
+- name: Validate web tier and database connectivity
+  hosts: web
+  become: true
+  gather_facts: false
+  vars:
+    mysql_application_password: "{{ vault_mysql_application_password }}"
+  tasks:
+    - name: Check Apache service
+      ansible.builtin.command: systemctl is-active apache2
+      changed_when: false
+
+    - name: Check database TCP connectivity from web server
+      ansible.builtin.wait_for:
+        host: "{{ prestashop_db_host }}"
+        port: "{{ prestashop_db_port }}"
+        timeout: 10
+
+    - name: Check SQL authentication from web server
+      ansible.builtin.command:
+        argv:
+          - mysql
+          - "--host={{ prestashop_db_host }}"
+          - "--port={{ prestashop_db_port }}"
+          - "--user={{ mysql_application_user }}"
+          - "--password={{ mysql_application_password }}"
+          - "--database={{ mysql_database_name }}"
+          - --execute=SELECT 1;
+      changed_when: false
+      no_log: true
+
+    - name: Check HTTP endpoint locally
+      ansible.builtin.uri:
+        url: http://127.0.0.1/
+        status_code: [200, 301, 302]
+        return_content: false

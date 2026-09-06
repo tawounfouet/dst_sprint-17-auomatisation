@@ -1,0 +1,15 @@
+---
+prestashop_version: "9.0.3-3.0"
+prestashop_install_dir: /var/www/prestashop
+prestashop_download_url: "https://assets.prestashop3.com/dst/edition/corporate/9.0.3-3.0/prestashop_edition_basic_version_9.0.3-3.0.zip"
+prestashop_domain: localhost
+prestashop_db_host: 127.0.0.1
+prestashop_db_port: 3306
+prestashop_db_prefix: ps_
+prestashop_language: fr
+prestashop_country: fr
+prestashop_admin_email: admin@example.invalid
+prestashop_admin_password: "{{ vault_prestashop_admin_password }}"
+mysql_database_name: prestashop
+mysql_application_user: prestashop_app
+mysql_application_password: "{{ vault_mysql_application_password }}"

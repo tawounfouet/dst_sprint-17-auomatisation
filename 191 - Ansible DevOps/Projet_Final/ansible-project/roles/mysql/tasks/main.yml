@@ -1,0 +1,42 @@
+---
+- name: Install MySQL and Python driver
+  ansible.builtin.apt:
+    name:
+      - mysql-server
+      - python3-pymysql
+    state: present
+    update_cache: true
+
+- name: Configure MySQL network listener
+  ansible.builtin.template:
+    src: mysqld.cnf.j2
+    dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart MySQL
+
+- name: Ensure MySQL is enabled and started
+  ansible.builtin.service:
+    name: mysql
+    state: started
+    enabled: true
+
+- name: Flush handlers before database provisioning
+  ansible.builtin.meta: flush_handlers
+
+- name: Create PrestaShop database
+  community.mysql.mysql_db:
+    name: "{{ mysql_database_name }}"
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+
+- name: Create least-privilege application user
+  community.mysql.mysql_user:
+    name: "{{ mysql_application_user }}"
+    password: "{{ mysql_application_password }}"
+    host: "{{ mysql_app_host }}"
+    priv: "{{ mysql_database_name }}.*:ALL"
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+  no_log: true

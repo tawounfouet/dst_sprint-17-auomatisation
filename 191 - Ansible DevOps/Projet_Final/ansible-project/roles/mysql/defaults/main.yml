@@ -1,0 +1,7 @@
+---
+mysql_database_name: prestashop
+mysql_application_user: prestashop_app
+mysql_application_password: "{{ vault_mysql_application_password }}"
+mysql_app_host: "%"
+mysql_bind_address: "0.0.0.0"
+mysql_port: 3306

@@ -1,0 +1,161 @@
+---
+- name: Install Apache, PHP, MySQL client and archive tools
+  ansible.builtin.apt:
+    name:
+      - apache2
+      - libapache2-mod-php
+      - php
+      - php-cli
+      - php-curl
+      - php-gd
+      - php-intl
+      - php-mbstring
+      - php-mysql
+      - php-xml
+      - php-zip
+      - default-mysql-client
+      - unzip
+    state: present
+    update_cache: true
+
+- name: Enable Apache rewrite module
+  ansible.builtin.command: a2enmod rewrite
+  register: a2enmod_rewrite
+  changed_when: "'Enabling module rewrite' in a2enmod_rewrite.stdout"
+  notify: Restart Apache
+
+- name: Create PrestaShop installation directory
+  ansible.builtin.file:
+    path: "{{ prestashop_install_dir }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+- name: Download official PrestaShop installer package
+  ansible.builtin.get_url:
+    url: "{{ prestashop_download_url }}"
+    dest: "/tmp/prestashop_{{ prestashop_version }}.zip"
+    mode: "0644"
+
+- name: Create release extraction directory
+  ansible.builtin.file:
+    path: "/tmp/prestashop-release-{{ prestashop_version }}"
+    state: directory
+    mode: "0755"
+
+- name: Extract PrestaShop release package
+  ansible.builtin.unarchive:
+    src: "/tmp/prestashop_{{ prestashop_version }}.zip"
+    dest: "/tmp/prestashop-release-{{ prestashop_version }}"
+    remote_src: true
+    creates: "/tmp/prestashop-release-{{ prestashop_version }}/.ansible_extracted"
+
+- name: Mark outer package as extracted
+  ansible.builtin.file:
+    path: "/tmp/prestashop-release-{{ prestashop_version }}/.ansible_extracted"
+    state: touch
+    mode: "0644"
+
+- name: Check for nested prestashop.zip package layout
+  ansible.builtin.stat:
+    path: "/tmp/prestashop-release-{{ prestashop_version }}/prestashop.zip"
+  register: prestashop_nested_archive
+
+- name: Extract nested PrestaShop application package
+  ansible.builtin.unarchive:
+    src: "/tmp/prestashop-release-{{ prestashop_version }}/prestashop.zip"
+    dest: "{{ prestashop_install_dir }}"
+    remote_src: true
+    owner: www-data
+    group: www-data
+    creates: "{{ prestashop_install_dir }}/install/index_cli.php"
+  when: prestashop_nested_archive.stat.exists
+
+- name: Copy direct installer package contents when no nested archive exists
+  ansible.builtin.copy:
+    src: "/tmp/prestashop-release-{{ prestashop_version }}/"
+    dest: "{{ prestashop_install_dir }}/"
+    remote_src: true
+    owner: www-data
+    group: www-data
+    mode: preserve
+  when: not prestashop_nested_archive.stat.exists
+
+- name: Check PrestaShop CLI installer exists
+  ansible.builtin.stat:
+    path: "{{ prestashop_install_dir }}/install/index_cli.php"
+  register: prestashop_cli_installer
+
+- name: Fail when the selected package is not an installable release
+  ansible.builtin.fail:
+    msg: >-
+      No install/index_cli.php was found after extraction. The configured
+      prestashop_download_url must reference a packaged installer, not the raw
+      GitHub source archive.
+  when: not prestashop_cli_installer.stat.exists
+
+- name: Install Apache virtual host
+  ansible.builtin.template:
+    src: prestashop-vhost.conf.j2
+    dest: /etc/apache2/sites-available/prestashop.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Apache
+
+- name: Disable default Apache site
+  ansible.builtin.command: a2dissite 000-default.conf
+  register: disable_default_site
+  changed_when: "'Site 000-default disabled' in disable_default_site.stdout"
+  failed_when: false
+  notify: Restart Apache
+
+- name: Enable PrestaShop Apache site
+  ansible.builtin.command: a2ensite prestashop.conf
+  register: enable_prestashop_site
+  changed_when: "'Enabling site prestashop' in enable_prestashop_site.stdout"
+  notify: Restart Apache
+
+- name: Flush Apache handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait until MySQL is reachable from web host
+  ansible.builtin.wait_for:
+    host: "{{ prestashop_db_host }}"
+    port: "{{ prestashop_db_port }}"
+    timeout: 30
+
+- name: Run PrestaShop CLI installer
+  ansible.builtin.command:
+    argv:
+      - php
+      - "{{ prestashop_install_dir }}/install/index_cli.php"
+      - "--domain={{ prestashop_domain }}"
+      - "--db_server={{ prestashop_db_host }}:{{ prestashop_db_port }}"
+      - "--db_name={{ mysql_database_name }}"
+      - "--db_user={{ mysql_application_user }}"
+      - "--db_password={{ mysql_application_password }}"
+      - "--prefix={{ prestashop_db_prefix }}"
+      - "--email={{ prestashop_admin_email }}"
+      - "--password={{ prestashop_admin_password }}"
+      - "--language={{ prestashop_language }}"
+      - "--country={{ prestashop_country }}"
+      - --newsletter=0
+      - --send_email=0
+  args:
+    creates: "{{ prestashop_install_dir }}/app/config/parameters.php"
+  become_user: www-data
+  no_log: true
+
+- name: Remove installation directory after successful install
+  ansible.builtin.file:
+    path: "{{ prestashop_install_dir }}/install"
+    state: absent
+
+- name: Ensure PrestaShop ownership
+  ansible.builtin.file:
+    path: "{{ prestashop_install_dir }}"
+    owner: www-data
+    group: www-data
+    recurse: true

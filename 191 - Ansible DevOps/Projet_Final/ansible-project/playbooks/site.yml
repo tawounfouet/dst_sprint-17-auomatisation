@@ -1,0 +1,17 @@
+---
+- name: Configure MySQL database server
+  hosts: database
+  become: true
+  gather_facts: true
+  roles:
+    - role: mysql
+
+- name: Configure PrestaShop web server
+  hosts: web
+  become: true
+  gather_facts: true
+  vars:
+    mysql_application_password: "{{ vault_mysql_application_password }}"
+    prestashop_admin_password: "{{ vault_prestashop_admin_password }}"
+  roles:
+    - role: prestashop
