@@ -2,12 +2,12 @@
 - name: Validate supported operating system
   ansible.builtin.assert:
     that:
-      - ansible_os_family == 'Debian'
-      - ansible_distribution == 'Ubuntu'
-      - ansible_distribution_version is version('24.04', '>=')
+      - ansible_facts['os_family'] == 'Debian'
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] is version('24.04', '>=')
     fail_msg: >-
       The common role targets Ubuntu 24.04 or newer. Detected
-      {{ ansible_distribution }} {{ ansible_distribution_version }}.
+      {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}.
     quiet: true
 
 - name: Update APT cache
