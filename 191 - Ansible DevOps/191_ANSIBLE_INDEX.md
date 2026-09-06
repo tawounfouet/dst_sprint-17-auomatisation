@@ -2,7 +2,7 @@
 
 > Sprint 17 — Automatisation
 
-Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il sera enrichi progressivement à mesure que les sources sont consolidées.
+Cet index est le point d’entrée du corpus Ansible canonique du dépôt.
 
 ## Parcours principal
 
@@ -14,20 +14,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 | 4 | `191.04_ANSIBLE_PLAYBOOKS.md` | ✅ Canonique |
 | 5 | `191.05_ANSIBLE_ROLES.md` | ✅ Canonique |
 | 6 | `191.06_ANSIBLE_VAULT.md` | ✅ Canonique |
-| 7 | `191.07_ANSIBLE_CONCLUSION_ET_PROJET_FINAL.md` | ⏳ À produire |
-
-## Documents transverses
-
-| Document | Rôle | Statut |
-|---|---|---|
-| `191_ANSIBLE_ARCHITECTURE_AND_WORKFLOW.md` | architecture, flux et modèle mental | ⏳ |
-| `191_ANSIBLE_SYNTHESE_COMPLETE.md` | synthèse du module | ⏳ |
-| `191_ANSIBLE_GLOSSAIRE.md` | vocabulaire | ⏳ |
-| `191_ANSIBLE_MEGA_CHEATSHEET.md` | commandes essentielles | ⏳ |
-| `191_ANSIBLE_BEST_PRACTICES.md` | pratiques recommandées | ⏳ |
-| `191_ANSIBLE_ANTI_PATTERNS_ET_PIEGES.md` | erreurs fréquentes | ⏳ |
-| `191_ANSIBLE_TROUBLESHOOTING.md` | diagnostic et résolution | ⏳ |
-| `191_ANSIBLE_COMPETENCES_A_RETENIR.md` | compétences clés | ⏳ |
+| 7 | `191.07_ANSIBLE_CONCLUSION_ET_PROJET_FINAL.md` | ✅ Canonique |
 
 ## Laboratoires
 
@@ -40,161 +27,53 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 | 5 | `labs/05-roles-wordpress/` | ✅ Rôle WordPress réutilisable |
 | 6 | `labs/06-vault/` | ✅ Vault + variables sensibles WordPress |
 
-Chaque laboratoire doit être reproductible et inclure au minimum :
-
-- un `README.md` ;
-- les fichiers de configuration nécessaires ;
-- les commandes d’exécution ;
-- les résultats attendus ;
-- les erreurs connues ;
-- les actions de nettoyage.
-
-### Lab 01 — Multipass bootstrap
-
-Le premier laboratoire met en place :
-
-```text
-ansible-master
-├── cible1
-├── cible2
-└── cible3
-```
-
-avec quatre VM Ubuntu 24.04, l'utilisateur `datascientest`, une configuration SSH adaptée au TP, un `ansible.cfg` minimal et un script Python d'inventaire Multipass.
-
-Les secrets présents dans les sources pédagogiques ne sont pas repris tels quels : le lab publié utilise des placeholders explicites.
-
-### Lab 02 — Modules et commandes ad hoc
-
-Le second laboratoire exploite l'infrastructure du lab 01 pour pratiquer :
-
-```text
-ping
-copy
-setup
-file
-apt
-service
-command
-shell
-ansible-doc
-become (-b)
-debugging -vvvv
-```
-
-Il fournit un inventaire d'exemple sans IP réelle, un fichier de test et un script de qualification non destructif.
-
-### Lab 03 — Inventaire structuré
-
-Le troisième laboratoire transforme les trois cibles en une topologie logique :
-
-```text
-datascientest_app
-├── dev  → client-dev
-├── test → client-test
-└── prod → client-prod
-```
-
-Il couvre les inventaires INI/YAML, les groupes enfants, les variables `env`, `ansible-inventory --list/--graph`, le ciblage par groupe ou hôte et une variante préparant `group_vars/` et `host_vars/` pour le chapitre Playbooks.
-
-### Lab 04 — Playbooks
-
-Le quatrième laboratoire réutilise les VM Multipass avec une nouvelle topologie fonctionnelle :
-
-```text
-ansible-master
-├── serveurweb1      → Apache2 + template Jinja2
-└── serveurdatabase1 → PostgreSQL
-```
-
-Il couvre :
-
-```text
-play / task / module
-ansible-playbook
-PLAY RECAP
---limit
-variables
-group_vars / host_vars
-facts
-register / debug
-when
-loop
-tags
-Jinja2 / template
-syntax-check
-troubleshooting Apache/PostgreSQL
-```
-
-Un second playbook `features-demo.yaml` permet de pratiquer les facts, conditions, `register`, `debug` et boucles sans transformer le lab en projet applicatif complexe.
-
-### Lab 05 — Rôles WordPress
-
-Le cinquième laboratoire transforme le déploiement WordPress du chapitre Playbooks en rôle réutilisable :
-
-```text
-install_wordpress.yaml
-        │
-        └── role wordpress
-            ├── defaults/
-            ├── tasks/
-            ├── handlers/
-            ├── templates/
-            ├── meta/
-            ├── vars/
-            └── tests/
-```
-
-Il couvre `ansible-galaxy init`, la structure standard d'un rôle, `include_tasks`, les handlers, les templates Nginx/WordPress, le dépannage du vhost Nginx par défaut et l'appel du rôle depuis un playbook d'orchestration. Les variables sensibles restent des placeholders : leur chiffrement est l'objet du Lab 06.
-
-### Lab 06 — Vault
-
-Le sixième laboratoire prolonge le Lab 05 sans dupliquer le rôle WordPress. Il applique Ansible Vault à `group_vars/production.yaml` et pratique :
-
-```text
-ansible-vault create
-ansible-vault encrypt
-ansible-vault view
-ansible-vault edit
-ansible-vault rekey
-ansible-vault decrypt
---ask-vault-pass
---vault-password-file
-chmod 600 ~/.vault_pass
-```
-
-Le fichier publié reste un `production.example.yaml` sans secret réel. Le fichier local `production.yaml` est explicitement ignoré par Git et doit être chiffré avant d'être utilisé avec le playbook WordPress.
-
 ## Examen
 
-La partie `Examen/` sera séparée du cours afin de distinguer clairement :
+L’évaluation finale est désormais structurée dans :
 
 ```text
-apprentissage
-    ↓
-pratique guidée
-    ↓
-évaluation
+Examen/
+├── README.md
+├── 191.07_ENONCE_EVALUATION_DATASCIENTEST.md
+├── 191.07_ANALYSE_EXIGENCES.md
+├── 191.07_ARCHITECTURE_CIBLE.md
+├── 191.07_PLAN_IMPLEMENTATION.md
+├── 191.07_CHECKLIST_VALIDATION.md
+├── 191.07_STRATEGIE_TESTS.md
+└── 191.07_CORRIGE_REFERENCE.md
 ```
 
-Elle contiendra l’énoncé, l’analyse des exigences, la checklist, la stratégie de validation et un corrigé de référence.
+Le sujet demande une solution e-commerce automatisée avec deux rôles distincts, un rôle web et un rôle MySQL, un playbook d’orchestration, des logs de tests et un rendu ZIP. Prestashop est la solution de référence ; WordPress ou Magento sont admis par le support comme alternatives valides.
 
 ## Projet final
 
-Le dossier `Projet_Final/` accueillera l’implémentation réellement exécutée, sa documentation et les preuves de validation.
+Le dossier `Projet_Final/` accueillera l’implémentation réellement exécutée.
 
 ```text
+Examen/
+   │
+   │ exigences / architecture / tests
+   ▼
 Projet_Final/
-├── documentation
-├── ansible-project/
-└── evidence/
+   ├── documentation
+   ├── ansible-project/
+   └── evidence/
 ```
 
-## Sources et migration
+L’objectif de l’étape suivante sera de transformer le blueprint de l’examen en code Ansible réellement exécutable, puis de produire les preuves de validation.
 
-Les ressources historiques ne sont pas considérées comme documentation active. Leur qualification est suivie dans :
+## Documents transverses à produire ensuite
 
-`archive/migration/ANSIBLE_RESOURCE_INVENTORY_AND_MIGRATION_MAP.md`
+| Document | Rôle | Statut |
+|---|---|---|
+| `191_ANSIBLE_ARCHITECTURE_AND_WORKFLOW.md` | architecture et modèle mental | ⏳ |
+| `191_ANSIBLE_SYNTHESE_COMPLETE.md` | synthèse du module | ⏳ |
+| `191_ANSIBLE_GLOSSAIRE.md` | vocabulaire | ⏳ |
+| `191_ANSIBLE_MEGA_CHEATSHEET.md` | commandes essentielles | ⏳ |
+| `191_ANSIBLE_BEST_PRACTICES.md` | pratiques recommandées | ⏳ |
+| `191_ANSIBLE_ANTI_PATTERNS_ET_PIEGES.md` | erreurs fréquentes | ⏳ |
+| `191_ANSIBLE_TROUBLESHOOTING.md` | diagnostic et résolution | ⏳ |
+| `191_ANSIBLE_COMPETENCES_A_RETENIR.md` | compétences clés | ⏳ |
 
 ## Progression
 
@@ -215,12 +94,18 @@ Les ressources historiques ne sont pas considérées comme documentation active.
           ↓
 [8] 191.06 + Lab 06                     ✅
           ↓
-[9] 191.07 + Examen                     ⏭️ NEXT
+[9] 191.07 + Examen                     ✅
           ↓
-[10] Projet final
+[10] Projet final réel                  ⏭️ NEXT
           ↓
 [11] Synthèses et références
 ```
+
+## Sources et migration
+
+Les ressources historiques restent qualifiées dans :
+
+`archive/migration/ANSIBLE_RESOURCE_INVENTORY_AND_MIGRATION_MAP.md`
 
 ## Règle de publication
 
