@@ -29,7 +29,7 @@ Cet index est le point d’entrée du corpus Ansible canonique du dépôt.
 
 ## Examen
 
-L’évaluation finale est désormais structurée dans :
+L’évaluation finale est structurée dans :
 
 ```text
 Examen/
@@ -43,24 +43,30 @@ Examen/
 └── 191.07_CORRIGE_REFERENCE.md
 ```
 
-Le sujet demande une solution e-commerce automatisée avec deux rôles distincts, un rôle web et un rôle MySQL, un playbook d’orchestration, des logs de tests et un rendu ZIP. Prestashop est la solution de référence ; WordPress ou Magento sont admis par le support comme alternatives valides.
+Le sujet demande une solution e-commerce automatisée avec deux rôles distincts, un rôle web et un rôle MySQL, un playbook d’orchestration, des logs de tests et un rendu ZIP. PrestaShop est la solution de référence ; WordPress ou Magento sont admis par le support comme alternatives valides.
 
 ## Projet final
 
-Le dossier `Projet_Final/` accueillera l’implémentation réellement exécutée.
+L’implémentation de l’examen est désormais présente dans :
 
 ```text
-Examen/
-   │
-   │ exigences / architecture / tests
-   ▼
 Projet_Final/
-   ├── documentation
-   ├── ansible-project/
-   └── evidence/
+├── README.md
+├── documentation 191.07_*.md
+├── ansible-project/
+│   ├── inventories/prod/
+│   ├── playbooks/
+│   ├── roles/mysql/
+│   ├── roles/prestashop/
+│   ├── scripts/
+│   └── tests/
+└── evidence/
+    ├── logs/
+    ├── screenshots/
+    └── validation/
 ```
 
-L’objectif de l’étape suivante sera de transformer le blueprint de l’examen en code Ansible réellement exécutable, puis de produire les preuves de validation.
+Le code est livré et une qualification statique réelle est enregistrée dans `Projet_Final/evidence/logs/static-validation.txt`. La qualification runtime reste à exécuter sur deux machines SSH joignables afin de produire les logs de déploiement et de validation réseau/application ; aucune preuve runtime fictive n’est commitée.
 
 ## Documents transverses à produire ensuite
 
@@ -96,9 +102,11 @@ L’objectif de l’étape suivante sera de transformer le blueprint de l’exam
           ↓
 [9] 191.07 + Examen                     ✅
           ↓
-[10] Projet final réel                  ⏭️ NEXT
+[10] Projet final — implémentation       ✅
           ↓
-[11] Synthèses et références
+     Qualification runtime              ⏳
+          ↓
+[11] Synthèses et références            ⏭️ NEXT après qualification
 ```
 
 ## Sources et migration
