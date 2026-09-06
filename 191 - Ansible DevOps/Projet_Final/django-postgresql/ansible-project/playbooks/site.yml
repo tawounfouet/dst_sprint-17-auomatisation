@@ -1,0 +1,94 @@
+---
+- name: Validate Django PostgreSQL deployment topology
+  hosts: localhost
+  gather_facts: false
+  become: false
+  tags:
+    - always
+    - topology
+  tasks:
+    - name: Validate required inventory groups
+      ansible.builtin.assert:
+        that:
+          - "'app' in groups"
+          - "'database' in groups"
+          - "groups['app'] | length == 1"
+          - "groups['database'] | length == 1"
+        fail_msg: >-
+          This project currently expects exactly one host in group 'app'
+          and exactly one host in group 'database'.
+        quiet: true
+
+- name: Prepare all Django PostgreSQL servers
+  hosts: all
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags:
+    - common
+  roles:
+    - role: common
+
+- name: Configure PostgreSQL database tier
+  hosts: database
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
+  tags:
+    - database
+    - postgresql
+  pre_tasks:
+    - name: Validate PostgreSQL Vault secret is available
+      ansible.builtin.assert:
+        that:
+          - vault_postgresql_password is defined
+          - vault_postgresql_password | length >= 16
+          - vault_postgresql_password != 'CHANGE_ME_POSTGRES_PASSWORD'
+        fail_msg: >-
+          vault_postgresql_password must be defined in the encrypted
+          inventories/prod/group_vars/vault.yml file.
+        quiet: true
+      no_log: true
+  roles:
+    - role: postgresql
+
+- name: Deploy Django application tier
+  hosts: app
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
+  tags:
+    - app
+    - django
+  pre_tasks:
+    - name: Validate Django Vault secrets are available
+      ansible.builtin.assert:
+        that:
+          - vault_postgresql_password is defined
+          - vault_postgresql_password | length >= 16
+          - vault_postgresql_password != 'CHANGE_ME_POSTGRES_PASSWORD'
+          - vault_django_secret_key is defined
+          - vault_django_secret_key | length >= 32
+          - vault_django_secret_key != 'CHANGE_ME_DJANGO_SECRET_KEY'
+        fail_msg: >-
+          Django runtime secrets must be defined in the encrypted
+          inventories/prod/group_vars/vault.yml file.
+        quiet: true
+      no_log: true
+  roles:
+    - role: django_app
+
+- name: Configure Nginx frontend tier
+  hosts: app
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags:
+    - app
+    - nginx
+  roles:
+    - role: nginx
