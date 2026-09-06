@@ -73,5 +73,5 @@
     name: mysql
     state: started
 
-# La création de la base et de l'utilisateur applicatif est finalisée
-# dans le Lab 06 après chiffrement des variables sensibles avec Vault.
+- name: MySQL - Créer la base et l'utilisateur applicatif
+  ansible.builtin.include_tasks: mysql.yaml
