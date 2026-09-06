@@ -47,10 +47,20 @@ jobs:
             docker run -d --name "$host" --hostname "$host" --network ansible-e2e --privileged --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:rw ansible-e2e-target
           done
           for host in web1 db1; do
+            ready=0
             for i in $(seq 1 30); do
-              docker exec "$host" systemctl is-system-running --wait >/dev/null 2>&1 && break || true
+              state="$(docker exec "$host" systemctl is-system-running 2>/dev/null || true)"
+              if [[ "$state" == "running" || "$state" == "degraded" ]]; then
+                ready=1
+                break
+              fi
               sleep 2
             done
+            if [[ "$ready" != 1 ]]; then
+              echo "$host did not reach running/degraded systemd state"
+              docker exec "$host" systemctl --failed --no-pager || true
+              exit 1
+            fi
           done
 
       - name: Prepare runtime inventory and encrypted vars
