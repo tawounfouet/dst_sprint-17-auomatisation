@@ -31,29 +31,29 @@ module "networking" {
 module "rds" {
   source = "./modules/rds"
 
-  project_name        = var.project_name
-  subnet_ids          = module.networking.private_db_subnet_ids
-  security_group_id   = module.networking.db_security_group_id
-  db_instance_class   = var.db_instance_class
-  db_name             = var.db_name
-  db_username         = var.db_username
-  allocated_storage   = var.db_allocated_storage
+  project_name      = var.project_name
+  subnet_ids        = module.networking.private_db_subnet_ids
+  security_group_id = module.networking.db_security_group_id
+  db_instance_class = var.db_instance_class
+  db_name           = var.db_name
+  db_username       = var.db_username
+  allocated_storage = var.db_allocated_storage
 }
 
 module "ec2" {
   source = "./modules/ec2"
 
-  project_name       = var.project_name
-  region             = var.region
-  instance_type      = var.instance_type
-  subnet_id          = module.networking.public_subnet_ids[0]
-  security_group_id  = module.networking.web_security_group_id
-  key_name           = var.key_name
-  db_endpoint        = module.rds.endpoint
-  db_name            = var.db_name
-  db_username        = var.db_username
-  db_secret_arn      = module.rds.master_user_secret_arn
-  enable_https       = var.enable_https
+  project_name      = var.project_name
+  region            = var.region
+  instance_type     = var.instance_type
+  subnet_id         = module.networking.public_subnet_ids[0]
+  security_group_id = module.networking.web_security_group_id
+  key_name          = var.key_name
+  db_endpoint       = module.rds.endpoint
+  db_name           = var.db_name
+  db_username       = var.db_username
+  db_secret_arn     = module.rds.master_user_secret_arn
+  enable_https      = var.enable_https
 }
 
 module "ebs" {
