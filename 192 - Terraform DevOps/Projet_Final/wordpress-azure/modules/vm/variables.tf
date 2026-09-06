@@ -3,7 +3,6 @@ variable "environment" { type = string }
 variable "resource_group" { type = string }
 variable "location" { type = string }
 variable "subnet_id" { type = string }
-variable "network_security_group_id" { type = string }
 variable "vm_size" { type = string }
 variable "zone" { type = string }
 variable "admin_username" { type = string }
