@@ -25,7 +25,7 @@ base django_app existante
 rôle django_app existant
 ```
 
-La présence de la base et du rôle est vérifiée en lecture seule via `psql` exécuté sous l'utilisateur système `postgres`.
+La présence de la base et du rôle est vérifiée en lecture seule via `community.postgresql.postgresql_query`, exécuté sous l'utilisateur système `postgres`. Les paramètres sont transmis avec `named_args` plutôt que concaténés dans la requête SQL.
 
 ### Tier application
 
