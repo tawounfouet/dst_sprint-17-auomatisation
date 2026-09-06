@@ -1,0 +1,49 @@
+name: Ansible Django PostgreSQL Qualification
+
+on:
+  push:
+    branches:
+      - feat/ansible-django-postgresql-project
+    paths:
+      - '191 - Ansible DevOps/Projet_Final/django-postgresql/**'
+      - '.github/workflows/ansible-django-postgresql-qualification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  first-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      PROJECT_DIR: 191 - Ansible DevOps/Projet_Final/django-postgresql/ansible-project
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ansible E2E dependencies
+        run: |
+          python -m pip install 'ansible-core>=2.17,<2.21' docker PyYAML
+          cd "$PROJECT_DIR"
+          ansible-galaxy collection install -r requirements.yml
+          ansible-galaxy collection install -r requirements-e2e.yml
+
+      - name: Run first end-to-end qualification
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: bash tests/e2e/run_first_qualification.sh
+
+      - name: Upload qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-django-postgresql-lot10-evidence
+          path: |
+            191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/logs/*.txt
+            191 - Ansible DevOps/Projet_Final/django-postgresql/evidence/validation/*
+          if-no-files-found: warn
+          retention-days: 14
