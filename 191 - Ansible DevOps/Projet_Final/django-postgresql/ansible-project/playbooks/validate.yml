@@ -50,39 +50,45 @@
         connect_timeout: 3
         timeout: 15
 
-    - name: Verify Django PostgreSQL database exists
-      ansible.builtin.command:
-        argv:
-          - psql
-          - --dbname=postgres
-          - --tuples-only
-          - --no-align
-          - "--set=database_name={{ postgresql_database }}"
-          - --command
-          - "SELECT 1 FROM pg_database WHERE datname = :'database_name';"
+    - name: Query Django PostgreSQL database existence
+      community.postgresql.postgresql_query:
+        db: postgres
+        query: >-
+          SELECT EXISTS(
+            SELECT 1 FROM pg_database WHERE datname = %(database_name)s
+          ) AS exists
+        named_args:
+          database_name: "{{ postgresql_database }}"
       become_user: postgres
       register: validate_postgresql_database
       changed_when: false
-      failed_when: >-
-        validate_postgresql_database.rc != 0 or
-        (validate_postgresql_database.stdout | trim) != '1'
 
-    - name: Verify Django PostgreSQL role exists
-      ansible.builtin.command:
-        argv:
-          - psql
-          - --dbname=postgres
-          - --tuples-only
-          - --no-align
-          - "--set=role_name={{ postgresql_user }}"
-          - --command
-          - "SELECT 1 FROM pg_roles WHERE rolname = :'role_name';"
+    - name: Assert Django PostgreSQL database exists
+      ansible.builtin.assert:
+        that:
+          - validate_postgresql_database.query_result[0].exists | bool
+        fail_msg: "PostgreSQL database {{ postgresql_database }} does not exist."
+        quiet: true
+
+    - name: Query Django PostgreSQL role existence
+      community.postgresql.postgresql_query:
+        db: postgres
+        query: >-
+          SELECT EXISTS(
+            SELECT 1 FROM pg_roles WHERE rolname = %(role_name)s
+          ) AS exists
+        named_args:
+          role_name: "{{ postgresql_user }}"
       become_user: postgres
       register: validate_postgresql_role
       changed_when: false
-      failed_when: >-
-        validate_postgresql_role.rc != 0 or
-        (validate_postgresql_role.stdout | trim) != '1'
+
+    - name: Assert Django PostgreSQL role exists
+      ansible.builtin.assert:
+        that:
+          - validate_postgresql_role.query_result[0].exists | bool
+        fail_msg: "PostgreSQL role {{ postgresql_user }} does not exist."
+        quiet: true
 
 - name: Validate Django application tier
   hosts: app
@@ -113,7 +119,7 @@
     - name: Wait for Gunicorn local port
       ansible.builtin.wait_for:
         host: 127.0.0.1
-        port: "{{ django_gunicorn_bind.split(':')[-1] | int if django_gunicorn_bind is defined else 8000 }}"
+        port: "{{ (django_gunicorn_bind.split(':')[-1] | int) if django_gunicorn_bind is defined else 8000 }}"
         state: started
         connect_timeout: 3
         timeout: 15
