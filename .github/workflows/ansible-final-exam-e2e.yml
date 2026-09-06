@@ -1,0 +1,136 @@
+name: Ansible Final Exam E2E
+
+on:
+  push:
+    branches:
+      - feat/ansible-step-11-e2e-qualification
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      PROJECT_DIR: 191 - Ansible DevOps/Projet_Final/ansible-project
+      INVENTORY: inventories/prod/hosts.yml
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ansible and collections
+        run: |
+          python -m pip install 'ansible-core>=2.17,<2.21' docker
+          cd "$PROJECT_DIR"
+          ansible-galaxy collection install -r requirements.yml
+          ansible-galaxy collection install community.docker
+
+      - name: Build two Ubuntu 24.04 systemd targets
+        run: |
+          mkdir -p "$RUNNER_TEMP/ansible-e2e"
+          cat > "$RUNNER_TEMP/ansible-e2e/Dockerfile" <<'DOCKERFILE'
+          FROM ubuntu:24.04
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update && apt-get install -y --no-install-recommends systemd systemd-sysv dbus python3 ca-certificates curl iproute2 procps && rm -rf /var/lib/apt/lists/*
+          STOPSIGNAL SIGRTMIN+3
+          CMD ["/sbin/init"]
+          DOCKERFILE
+          docker build -t ansible-e2e-target "$RUNNER_TEMP/ansible-e2e"
+          docker network create ansible-e2e
+          for host in web1 db1; do
+            docker run -d --name "$host" --hostname "$host" --network ansible-e2e --privileged --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:rw ansible-e2e-target
+          done
+          for host in web1 db1; do
+            for i in $(seq 1 30); do
+              docker exec "$host" systemctl is-system-running --wait >/dev/null 2>&1 && break || true
+              sleep 2
+            done
+          done
+
+      - name: Prepare runtime inventory and encrypted vars
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          cat > inventories/prod/hosts.yml <<'EOF'
+          ---
+          all:
+            children:
+              web:
+                hosts:
+                  web1:
+                    ansible_connection: community.docker.docker
+              database:
+                hosts:
+                  db1:
+                    ansible_connection: community.docker.docker
+          EOF
+          DB_PASSWORD="$(openssl rand -hex 18)"
+          ADMIN_PASSWORD="$(openssl rand -hex 18)"
+          VAULT_PASSWORD="$(openssl rand -hex 24)"
+          cat > inventories/prod/group_vars/vault.yml <<EOF
+          ---
+          vault_mysql_application_password: "$DB_PASSWORD"
+          vault_prestashop_admin_password: "$ADMIN_PASSWORD"
+          EOF
+          printf '%s\n' "$VAULT_PASSWORD" > "$RUNNER_TEMP/vault-pass"
+          chmod 600 "$RUNNER_TEMP/vault-pass"
+          ansible-vault encrypt inventories/prod/group_vars/vault.yml --vault-password-file "$RUNNER_TEMP/vault-pass"
+          echo "VAULT_PASSWORD_FILE=$RUNNER_TEMP/vault-pass" >> "$GITHUB_ENV"
+
+      - name: Preflight
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./scripts/preflight.sh
+
+      - name: First deployment
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./scripts/run_exam.sh
+
+      - name: Runtime validation
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./scripts/validate_runtime.sh
+
+      - name: Verify external HTTP from control node
+        run: |
+          WEB_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' web1)"
+          curl --fail --show-error --location --max-time 30 "http://$WEB_IP/" -o /tmp/prestashop-front.html
+          test -s /tmp/prestashop-front.html
+
+      - name: Second deployment must be idempotent
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          ./scripts/run_exam.sh
+          SECOND_LOG="$(ls -1t ../evidence/logs/deploy-*.txt | head -1)"
+          tail -n 20 "$SECOND_LOG"
+          ! grep -Eq 'changed=[1-9][0-9]*' "$SECOND_LOG"
+
+      - name: Package and checksum
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          ./scripts/package_exam.sh
+          ZIP_FILE="$(ls -1t exam-final-ansible-*.zip | head -1)"
+          sha256sum "$ZIP_FILE" | tee "../evidence/validation/${ZIP_FILE}.sha256"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          for host in web1 db1; do
+            echo "===== $host ====="
+            docker exec "$host" systemctl --failed --no-pager || true
+            docker exec "$host" journalctl -n 200 --no-pager || true
+          done
+
+      - name: Upload E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-final-exam-e2e-evidence
+          path: |
+            191 - Ansible DevOps/Projet_Final/evidence/logs/*.txt
+            191 - Ansible DevOps/Projet_Final/evidence/validation/*.sha256
+            191 - Ansible DevOps/Projet_Final/ansible-project/exam-final-ansible-*.zip
+          retention-days: 14
