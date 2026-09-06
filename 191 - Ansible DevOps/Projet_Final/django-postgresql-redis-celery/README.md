@@ -7,6 +7,7 @@ Variante dérivée du projet `django-postgresql/` afin d'ajouter Redis et Celery
 ```text
 BASELINE COPIED          ✅
 ARCHITECTURE / CONTRACTS ✅
+PYTHON DEPENDENCIES      ✅
 REDIS IMPLEMENTATION     ⏳
 CELERY IMPLEMENTATION    ⏳
 ASYNC TASK API           ⏳
@@ -52,6 +53,18 @@ Le contrat réseau est :
 
 Redis sera utilisé comme broker Celery (`/0`) et result backend (`/1`), avec authentification et mot de passe fourni par Ansible Vault.
 
+## Dépendances Python — RC-02
+
+```text
+Django>=5.2,<5.3
+gunicorn>=23,<24
+psycopg[binary]>=3.2,<4
+celery>=5.5,<6
+redis>=6,<7
+```
+
+Le runtime conserve Python standard `venv` sous `.venv` ; aucune dépendance `virtualenv` n'est introduite.
+
 ## Rôles cibles
 
 ```text
@@ -69,14 +82,14 @@ Ordre prévu :
 common → postgresql → redis → django_app → celery → nginx
 ```
 
-Les rôles `redis` et `celery` ne sont pas encore implémentés à l'issue de RC-01.
+Les rôles `redis` et `celery` ne sont pas encore implémentés à l'issue de RC-02.
 
 ## Tâches de démonstration cibles
 
 ```text
-add(21, 21)               → 42
+add(21, 21)                → 42
 uppercase("datascientest") → "DATASCIENTEST"
-database_probe()          → PostgreSQL → SELECT 1
+database_probe()           → PostgreSQL → SELECT 1
 ```
 
 La future CI devra exécuter réellement ces tâches via Redis et un worker Celery.
@@ -92,6 +105,7 @@ Les contrats d'architecture sont définis dans [`ARCHITECTURE.md`](./ARCHITECTUR
 ```text
 RC-00  Fork contrôlé de la baseline    ✅
 RC-01  Architecture et contrats        ✅
+RC-02  Dépendances Python              ✅
 ```
 
-Le prochain jalon est **RC-02 — Dépendances Python**.
+Le prochain jalon est **RC-03 — Intégration Celery dans Django**.
