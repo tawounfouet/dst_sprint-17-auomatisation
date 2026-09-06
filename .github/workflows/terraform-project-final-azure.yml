@@ -1,0 +1,51 @@
+name: Terraform Project Final - Azure
+
+on:
+  push:
+    paths:
+      - "192 - Terraform DevOps/Projet_Final/wordpress-azure/**"
+      - ".github/workflows/terraform-project-final-azure.yml"
+  pull_request:
+    paths:
+      - "192 - Terraform DevOps/Projet_Final/wordpress-azure/**"
+      - ".github/workflows/terraform-project-final-azure.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: "192 - Terraform DevOps/Projet_Final/wordpress-azure"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Terraform fmt
+        run: terraform fmt -check -diff -recursive
+
+      - name: Terraform init without backend
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Validate bootstrap shell syntax
+        run: bash -n modules/vm/user_data.sh.tftpl
+
+      - name: Reject obvious committed Azure client secrets
+        shell: bash
+        run: |
+          if grep -R --line-number --extended-regexp '(AZURE_CLIENT_SECRET|ARM_CLIENT_SECRET)[[:space:]]*=' . --exclude-dir=.terraform; then
+            echo "Potential Azure client secret assignment detected in the project."
+            exit 1
+          fi
