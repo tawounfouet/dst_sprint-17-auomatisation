@@ -1,0 +1,85 @@
+name: Terraform Project Final - AWS Plan
+
+on:
+  push:
+    paths:
+      - "192 - Terraform DevOps/Projet_Final/wordpress-aws/**"
+      - ".github/workflows/terraform-project-final-aws-plan.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  aws-plan:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: "192 - Terraform DevOps/Projet_Final/wordpress-aws"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Require an AWS authentication method
+        shell: bash
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          AWS_ACCESS_KEY_ID_VALUE: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        run: |
+          if [ -z "$AWS_ROLE_ARN" ] && [ -z "$AWS_ACCESS_KEY_ID_VALUE" ]; then
+            echo "No AWS credentials are configured for this repository."
+            echo "Preferred: configure AWS_ROLE_ARN for GitHub OIDC."
+            echo "Fallback: configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."
+            exit 2
+          fi
+
+      - name: Configure AWS credentials with OIDC
+        if: ${{ secrets.AWS_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-3
+
+      - name: Configure AWS credentials with access keys
+        if: ${{ secrets.AWS_ROLE_ARN == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: eu-west-3
+
+      - name: Confirm AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Terraform format check
+        run: terraform fmt -check -diff -recursive
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform real AWS plan
+        run: terraform plan -input=false -no-color -out=tfplan | tee terraform-plan.txt
+
+      - name: Render plan summary
+        run: terraform show -no-color tfplan > terraform-plan-full.txt
+
+      - name: Upload qualification plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-project-final-aws-plan
+          path: |
+            192 - Terraform DevOps/Projet_Final/wordpress-aws/terraform-plan.txt
+            192 - Terraform DevOps/Projet_Final/wordpress-aws/terraform-plan-full.txt
+          retention-days: 7
