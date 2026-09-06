@@ -3,6 +3,8 @@
   hosts: database
   become: true
   gather_facts: false
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
   tasks:
     - name: Check MySQL service
       ansible.builtin.command: systemctl is-active mysql
@@ -18,6 +20,8 @@
   hosts: web
   become: true
   gather_facts: false
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
   vars:
     mysql_application_password: "{{ vault_mysql_application_password }}"
   tasks:
