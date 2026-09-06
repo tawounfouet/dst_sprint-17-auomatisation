@@ -1,0 +1,13 @@
+inventaire.yaml
+host_vars/serveurweb1.yaml
+host_vars/serveurdatabase1.yaml
+*.retry
+*.log
+.env
+.env.*
+.vault_pass
+*.pem
+*.key
+id_rsa
+id_ed25519
+.DS_Store

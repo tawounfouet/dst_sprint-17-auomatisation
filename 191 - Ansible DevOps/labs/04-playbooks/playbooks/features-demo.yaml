@@ -1,0 +1,33 @@
+---
+- name: Démonstration variables facts conditions register et boucles
+  hosts: all
+  gather_facts: true
+
+  tasks:
+    - name: Afficher le système d'exploitation détecté
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} -> {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+
+    - name: Message uniquement pour la famille Debian
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} appartient à la famille Debian"
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Capturer la version Python
+      ansible.builtin.command: python3 --version
+      register: python_version
+      changed_when: false
+
+    - name: Afficher stdout enregistré
+      ansible.builtin.debug:
+        msg: "{{ python_version.stdout }}"
+
+    - name: Créer des répertoires de démonstration dans tmp
+      ansible.builtin.file:
+        path: "/tmp/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - datascientest-a
+        - datascientest-b
+        - datascientest-c

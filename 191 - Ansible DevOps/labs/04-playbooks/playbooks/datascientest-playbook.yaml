@@ -1,0 +1,50 @@
+---
+- name: Configurer le serveur web Apache
+  hosts: serveurweb
+  become: true
+
+  tasks:
+    - name: Installer Apache2
+      ansible.builtin.apt:
+        name: apache2
+        state: present
+        update_cache: true
+      tags:
+        - web
+
+    - name: Démarrer et activer Apache2
+      ansible.builtin.service:
+        name: apache2
+        state: started
+        enabled: true
+      tags:
+        - web
+
+    - name: Déployer la page d'accueil Jinja2
+      ansible.builtin.template:
+        src: ../templates/index.html.j2
+        dest: /var/www/html/index.html
+        mode: "0644"
+      tags:
+        - web
+
+- name: Configurer le serveur PostgreSQL
+  hosts: serveurdatabase
+  become: true
+
+  tasks:
+    - name: Installer PostgreSQL
+      ansible.builtin.apt:
+        name: postgresql
+        state: present
+        update_cache: true
+      tags:
+        - db
+
+    - name: Démarrer et activer PostgreSQL
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+        enabled: true
+      tags:
+        - db
