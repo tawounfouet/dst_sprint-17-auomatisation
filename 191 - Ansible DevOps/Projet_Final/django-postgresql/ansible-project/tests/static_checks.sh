@@ -138,7 +138,8 @@ fi
 
 grep -Fq 'django_gunicorn_bind: 127.0.0.1:8000' inventories/prod/group_vars/all.yml \
   || fail "Gunicorn must remain bound to 127.0.0.1:8000"
-if grep -Eq '^django_allowed_hosts:[[:space:]]+["'"']?\*["'"']?[[:space:]]*$' inventories/prod/group_vars/all.yml; then
+if grep -Eq '^[[:space:]]*django_allowed_hosts:[[:space:]]*"?\*"?[[:space:]]*$' inventories/prod/group_vars/all.yml \
+  || grep -Eq "^[[:space:]]*django_allowed_hosts:[[:space:]]*'\\*'[[:space:]]*$" inventories/prod/group_vars/all.yml; then
   fail "DJANGO_ALLOWED_HOSTS wildcard is not accepted"
 fi
 pass "venv, PostgreSQL, Gunicorn and allowed-host hardening"
