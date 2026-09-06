@@ -3,6 +3,8 @@
   hosts: database
   become: true
   gather_facts: true
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
   roles:
     - role: mysql
 
@@ -10,6 +12,8 @@
   hosts: web
   become: true
   gather_facts: true
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
   vars:
     mysql_application_password: "{{ vault_mysql_application_password }}"
     prestashop_admin_password: "{{ vault_prestashop_admin_password }}"
