@@ -29,17 +29,16 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 | `191_ANSIBLE_TROUBLESHOOTING.md` | diagnostic et résolution | ⏳ |
 | `191_ANSIBLE_COMPETENCES_A_RETENIR.md` | compétences clés | ⏳ |
 
-## Laboratoires prévus
+## Laboratoires
 
-```text
-labs/
-├── 01-multipass-bootstrap/
-├── 02-modules-ad-hoc/
-├── 03-inventory/
-├── 04-playbooks/
-├── 05-roles-wordpress/
-└── 06-vault/
-```
+| Ordre | Laboratoire | Statut |
+|---:|---|---|
+| 1 | `labs/01-multipass-bootstrap/` | ✅ Bootstrap reproductible |
+| 2 | `labs/02-modules-ad-hoc/` | ⏳ |
+| 3 | `labs/03-inventory/` | ⏳ |
+| 4 | `labs/04-playbooks/` | ⏳ |
+| 5 | `labs/05-roles-wordpress/` | ⏳ |
+| 6 | `labs/06-vault/` | ⏳ |
 
 Chaque laboratoire doit être reproductible et inclure au minimum :
 
@@ -49,6 +48,21 @@ Chaque laboratoire doit être reproductible et inclure au minimum :
 - les résultats attendus ;
 - les erreurs connues ;
 - les actions de nettoyage.
+
+### Lab 01 — Multipass bootstrap
+
+Le premier laboratoire met en place :
+
+```text
+ansible-master
+├── cible1
+├── cible2
+└── cible3
+```
+
+avec quatre VM Ubuntu 24.04, l'utilisateur `datascientest`, une configuration SSH adaptée au TP, un `ansible.cfg` minimal et un script Python d'inventaire Multipass.
+
+Les secrets présents dans les sources pédagogiques ne sont pas repris tels quels : le lab publié utilise des placeholders explicites.
 
 ## Examen
 
@@ -84,11 +98,11 @@ Les ressources historiques ne sont pas considérées comme documentation active.
 ## Progression
 
 ```text
-[1] Bootstrap documentaire
+[1] Bootstrap documentaire              ✅
           ↓
-[2] Lab Multipass
+[2] Lab Multipass                       ✅
           ↓
-[3] 191.01
+[3] 191.01                              ⏭️ NEXT
           ↓
 [4] 191.02 + Lab 02
           ↓

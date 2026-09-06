@@ -1,0 +1,20 @@
+#cloud-config
+users:
+  - default
+  - name: datascientest
+    gecos: datascientest
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+
+# Public-repository placeholder.
+# Replace locally before launching the VMs and never commit the real password.
+chpasswd:
+  list: |
+    datascientest:CHANGE_ME_BEFORE_LAUNCH
+  expire: false
+
+runcmd:
+  - sudo sed 's/PasswordAuthentication no/PasswordAuthentication yes/' -i /etc/ssh/sshd_config
+  - sudo systemctl restart ssh
