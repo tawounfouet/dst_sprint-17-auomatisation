@@ -1,0 +1,13 @@
+all:
+  children:
+    datascientest_app:
+      children:
+        dev:
+          hosts:
+            client-dev:
+        test:
+          hosts:
+            client-test:
+        prod:
+          hosts:
+            client-prod:

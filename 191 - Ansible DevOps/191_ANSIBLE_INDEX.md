@@ -10,7 +10,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 |---:|---|---|
 | 1 | `191.01_ANSIBLE_INTRODUCTION_ET_INSTALLATION.md` | ✅ Canonique |
 | 2 | `191.02_ANSIBLE_MODULES_ET_COMMANDES_AD_HOC.md` | ✅ Canonique |
-| 3 | `191.03_ANSIBLE_INVENTAIRES.md` | ⏳ À produire |
+| 3 | `191.03_ANSIBLE_INVENTAIRES.md` | ✅ Canonique |
 | 4 | `191.04_ANSIBLE_PLAYBOOKS.md` | ⏳ À produire |
 | 5 | `191.05_ANSIBLE_ROLES.md` | ⏳ À produire |
 | 6 | `191.06_ANSIBLE_VAULT.md` | ⏳ À produire |
@@ -35,7 +35,7 @@ Cet index constitue le point d’entrée de la partie Ansible du dépôt. Il ser
 |---:|---|---|
 | 1 | `labs/01-multipass-bootstrap/` | ✅ Bootstrap reproductible |
 | 2 | `labs/02-modules-ad-hoc/` | ✅ Modules et commandes ad hoc |
-| 3 | `labs/03-inventory/` | ⏳ |
+| 3 | `labs/03-inventory/` | ✅ Inventaire structuré dev/test/prod |
 | 4 | `labs/04-playbooks/` | ⏳ |
 | 5 | `labs/05-roles-wordpress/` | ⏳ |
 | 6 | `labs/06-vault/` | ⏳ |
@@ -84,6 +84,19 @@ debugging -vvvv
 
 Il fournit un inventaire d'exemple sans IP réelle, un fichier de test et un script de qualification non destructif.
 
+### Lab 03 — Inventaire structuré
+
+Le troisième laboratoire transforme les trois cibles en une topologie logique :
+
+```text
+datascientest_app
+├── dev  → client-dev
+├── test → client-test
+└── prod → client-prod
+```
+
+Il couvre les inventaires INI/YAML, les groupes enfants, les variables `env`, `ansible-inventory --list/--graph`, le ciblage par groupe ou hôte et une variante préparant `group_vars/` et `host_vars/` pour le chapitre Playbooks.
+
 ## Examen
 
 La partie `Examen/` sera séparée du cours afin de distinguer clairement :
@@ -126,9 +139,9 @@ Les ressources historiques ne sont pas considérées comme documentation active.
           ↓
 [4] 191.02 + Lab 02                     ✅
           ↓
-[5] 191.03 + Lab 03                     ⏭️ NEXT
+[5] 191.03 + Lab 03                     ✅
           ↓
-[6] 191.04 + Lab 04
+[6] 191.04 + Lab 04                     ⏭️ NEXT
           ↓
 [7] 191.05 + Lab 05
           ↓

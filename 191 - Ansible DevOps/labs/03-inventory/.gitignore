@@ -1,0 +1,24 @@
+# Local inventory generated from examples
+inventaire.ini
+inventaire.generated.yaml
+
+# Runtime / temporary
+*.retry
+*.log
+*.tmp
+.ansible/
+.fact_cache/
+
+# Secrets / keys
+.env
+.env.*
+.vault_pass
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
