@@ -145,8 +145,10 @@ fi
 pass "venv, PostgreSQL, Gunicorn and allowed-host hardening"
 
 echo "== Secret and sensitive-file guards =="
-if grep -R -n --exclude='*.md' 'CHANGE_ME_' roles playbooks "$DJANGO_DIR/config" "$DJANGO_DIR/health"; then
-  fail "placeholder secret found in runtime implementation"
+# Guard deployed runtime content only. Playbooks intentionally compare against
+# CHANGE_ME_* sentinels to reject unmodified example Vault values.
+if grep -R -n --exclude='*.md' 'CHANGE_ME_' roles "$DJANGO_DIR/config" "$DJANGO_DIR/health"; then
+  fail "placeholder secret found in deployed runtime implementation"
 fi
 
 if git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
