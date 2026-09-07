@@ -137,7 +137,7 @@ pass "repository secret hygiene"
 echo "== Source invariants =="
 python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
-import re
+import ast
 import sys
 import yaml
 
@@ -164,7 +164,11 @@ require("DATABASE_URL must use PostgreSQL" in database, "PostgreSQL-only policy 
 require("django.db.backends.sqlite3" in database, "DEV SQLite fallback missing")
 require("required_postgresql_database" in stg and "required_postgresql_database" in prod, "STG/PROD PostgreSQL enforcement missing")
 require("DJANGO_DEBUG=true is forbidden" in stg and "DJANGO_DEBUG=true is forbidden" in prod, "STG/PROD DEBUG fail-fast missing")
-require("except" not in re.sub(r"#.*", "", database), "database policy must not silently catch PostgreSQL failures and fall back")
+database_tree = ast.parse(database, filename="config/settings/database.py")
+require(
+    not any(isinstance(node, (ast.Try, ast.TryStar)) for node in ast.walk(database_tree)),
+    "database policy must not use exception-driven PostgreSQL-to-SQLite fallback",
+)
 
 api_views = (django / "tasks_demo/views.py").read_text(encoding="utf-8")
 serializers = (django / "tasks_demo/serializers.py").read_text(encoding="utf-8")
