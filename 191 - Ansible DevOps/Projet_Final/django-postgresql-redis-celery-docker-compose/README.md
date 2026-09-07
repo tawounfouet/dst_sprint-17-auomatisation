@@ -28,12 +28,13 @@ DC-12 CI GREEN                  ✅
 STG-LIKE COMPOSE E2E            ✅ GREEN
 ANTI-SQLITE RUNTIME STG         ✅ GREEN
 DC-13 CI GREEN                  ✅
-STRICT IDEMPOTENCE              ⏭ NEXT
-PACKAGE + SHA-256               ⏳
+STRICT IDEMPOTENCE              ✅ GREEN
+DC-14 CI GREEN                  ✅
+PACKAGE + SHA-256               ⏭ NEXT
 FINAL REPORT                    ⏳
 ```
 
-Les statuts GREEN sont attribués uniquement aux gates réellement observés dans GitHub Actions. Les qualifications DEV Full et STG-like utilisent des runners Docker GitHub Actions ; elles ne constituent pas encore une qualification d'un VPS SSH/production.
+Les statuts GREEN sont attribués uniquement aux gates réellement observés dans GitHub Actions. Les qualifications DEV Full, STG-like et Strict Idempotence utilisent des runners GitHub-hosted Ubuntu éphémères ; elles ne constituent pas encore une qualification d'un VPS SSH/production.
 
 ## Stack cible
 
@@ -90,6 +91,8 @@ RUN     → web / worker / beat / nginx
 DC-12 a réellement construit une seule image puis confirmé que `web`, `worker` et `beat` utilisent le même image ID en DEV Full.
 
 DC-13 va plus loin : l'image est construite hors Compose, promue via un registry localhost éphémère pour obtenir une vraie référence `repository@sha256`, puis le registry est supprimé avant le déploiement. Le runtime STG-like utilise exclusivement cette référence digest-pinned avec `--no-build --pull never`.
+
+DC-14 confirme qu'une deuxième convergence complète avec exactement la même image et la même configuration ne reconstruit pas l'image, ne recrée aucun des six conteneurs long-running et ne modifie ni volumes, ni données, ni configuration déployée.
 
 ## Orchestration Ansible active
 
@@ -199,6 +202,15 @@ HEAD cbc4845f61fd73bb43f408a8c0cc170217824fe2
 Result SUCCESS
 ```
 
+Il a également été rejoué avec succès sur le commit canonique DC-14 :
+
+```text
+Run ID 34149470178
+Job ID 101828487082
+HEAD ec4be912013c625df6ea347c43c20cf650c66297
+Result SUCCESS
+```
+
 ## DC-12 — DEV Full E2E GREEN
 
 Workflow :
@@ -260,6 +272,15 @@ HEAD cbc4845f61fd73bb43f408a8c0cc170217824fe2
 Result SUCCESS
 ```
 
+Elle est également GREEN sur le commit canonique DC-14 :
+
+```text
+Run ID 34149470187
+Job ID 101828487313
+HEAD ec4be912013c625df6ea347c43c20cf650c66297
+Result SUCCESS
+```
+
 ## DC-13 — STG-like E2E + anti-SQLite GREEN
 
 Workflow :
@@ -289,33 +310,33 @@ Preuves observées :
 
 ```text
 application image built outside Compose                      ✅
-image promoted to repository@sha256                           ✅
-registry promotion removed before deployment                  ✅
-third-party images preloaded outside Compose                  ✅
-Compose build for web/worker/beat absent                      ✅
-Compose runtime --no-build --pull never                       ✅
-APPLICATION_ENV=stg                                           ✅
-DJANGO_SETTINGS_MODULE=config.settings.stg                     ✅
-DJANGO_DEBUG=false                                             ✅
-Django database backend = PostgreSQL                          ✅
-missing DATABASE_URL rejected                                 ✅
-SQLite DATABASE_URL rejected                                  ✅
-non-PostgreSQL DATABASE_URL rejected                          ✅
-DJANGO_DEBUG=true rejected                                    ✅
-PostgreSQL healthy + SELECT 1                                 ✅
-Redis healthy + authenticated PING                            ✅
+image promoted to repository@sha256                          ✅
+registry promotion removed before deployment                 ✅
+third-party images preloaded outside Compose                 ✅
+Compose build for web/worker/beat absent                     ✅
+Compose runtime --no-build --pull never                      ✅
+APPLICATION_ENV=stg                                          ✅
+DJANGO_SETTINGS_MODULE=config.settings.stg                    ✅
+DJANGO_DEBUG=false                                            ✅
+Django database backend = PostgreSQL                         ✅
+missing DATABASE_URL rejected                                ✅
+SQLite DATABASE_URL rejected                                 ✅
+non-PostgreSQL DATABASE_URL rejected                         ✅
+DJANGO_DEBUG=true rejected                                   ✅
+PostgreSQL healthy + SELECT 1                                ✅
+Redis healthy + authenticated PING                           ✅
 migrate + collectstatic + Beat schedule                      ✅
-nginx/web/db/redis/worker/beat healthy                        ✅
-web/worker/beat exact same prebuilt digest-pinned image       ✅
-health/database/redis/celery via Nginx                        ✅
-add(21,21) → 42                                               ✅
-uppercase(datascientest) → DATASCIENTEST                      ✅
-database_probe → SELECT 1                                     ✅
-Beat total_run_count >= 1                                     ✅
-periodic_heartbeat succeeded in Worker logs                   ✅
-127.0.0.1:8081 reachable                                      ✅
-127.0.0.1:8000/5432/6379 unreachable                          ✅
-HostConfig.PortBindings absent on 8000/5432/6379              ✅
+nginx/web/db/redis/worker/beat healthy                       ✅
+web/worker/beat exact same prebuilt digest-pinned image      ✅
+health/database/redis/celery via Nginx                       ✅
+add(21,21) → 42                                              ✅
+uppercase(datascientest) → DATASCIENTEST                     ✅
+database_probe → SELECT 1                                    ✅
+Beat total_run_count >= 1                                    ✅
+periodic_heartbeat succeeded in Worker logs                  ✅
+127.0.0.1:8081 reachable                                     ✅
+127.0.0.1:8000/5432/6379 unreachable                         ✅
+HostConfig.PortBindings absent on 8000/5432/6379             ✅
 ```
 
 Digest applicatif observé dans le run canonique :
@@ -335,6 +356,84 @@ Le premier run DC-13 a échoué parce que `--pull never` était appliqué alors 
 
 La référence digest-pinned est obtenue via un registry localhost éphémère. Cela qualifie l'immutabilité `repository@sha256`, mais pas encore un registry distant de production, son authentification, sa signature ou sa provenance supply-chain.
 
+La régression STG-like est également GREEN sur le commit canonique DC-14 :
+
+```text
+Run ID 34149470152
+Job ID 101828486901
+HEAD ec4be912013c625df6ea347c43c20cf650c66297
+Result SUCCESS
+```
+
+## DC-14 — Strict Idempotence GREEN
+
+Workflow :
+
+```text
+.github/workflows/ansible-django-postgresql-redis-celery-docker-compose-idempotence.yml
+```
+
+Qualification canonique :
+
+```text
+Run #5
+Run ID 34149470184
+Job ID 101828487085
+HEAD ec4be912013c625df6ea347c43c20cf650c66297
+Result SUCCESS
+
+Ubuntu 24.04.4
+Python 3.12.14
+ansible-core 2.20.8
+```
+
+La première convergence matérialise l'état :
+
+```text
+localhost : ok=54 changed=8 unreachable=0 failed=0 skipped=3
+```
+
+La seconde convergence avec les mêmes entrées démontre l'idempotence stricte :
+
+```text
+localhost : ok=54 changed=0 unreachable=0 failed=0 skipped=3
+```
+
+Preuves observées :
+
+```text
+second full site convergence changed=0                 ✅
+six long-running container IDs unchanged               ✅
+long-running image IDs unchanged                       ✅
+PostgreSQL/Redis/static named volumes unchanged         ✅
+Compose/runtime configuration checksums unchanged       ✅
+application image identity/Created unchanged            ✅
+no application rebuild inside idempotence pair          ✅
+PostgreSQL durable marker preserved                     ✅
+Redis durable marker preserved                          ✅
+static-volume durable marker preserved                  ✅
+STG health and Celery round-trips still GREEN           ✅
+host-port contract still valid                          ✅
+```
+
+Verdict canonique :
+
+```text
+DC14_ANSIBLE_PASS
+DC14_CONTAINER_PASS
+DC14_VOLUME_PASS
+DC14_CONFIG_PASS
+DC14_ARTIFACT_PASS
+DC14_DATA_PASS
+DC14_FUNCTIONAL_PASS
+DC14_COMPOSE_EQUIVALENCE
+DC14_STRICT_IDEMPOTENCE_PASS
+```
+
+DC-14 a notamment détecté puis éliminé un drift réel de permissions : `docker/redis/entrypoint.sh` est versionné exécutable en Git (`100755`) alors qu'une tâche Ansible le forçait auparavant à `0555`. Le couple `copy mode: preserve` puis `file mode: 0555` produisait artificiellement deux changements à chaque convergence. Le rôle converge désormais vers `0755`, cohérent avec le mode source, ce qui a permis le `changed=0` réel.
+
+Le run prouve l'idempotence sur un runner GitHub-hosted éphémère ; il ne constitue pas une qualification d'un serveur distant SSH ni d'une production réelle.
+
 ## Roadmap
 
 ```text
@@ -352,9 +451,9 @@ DC-10  Runtime hardening                                          ✅ IMPLEMENTE
 DC-11  Unit tests + static gate + Compose validation              ✅ GREEN
 DC-12  DEV Full E2E                                               ✅ GREEN
 DC-13  STG-like E2E + anti-SQLite runtime                         ✅ GREEN
-DC-14  Strict idempotence                                         ⏭ NEXT
-DC-15  Package + SHA-256 + artifact                               ⏳
+DC-14  Strict idempotence                                         ✅ GREEN
+DC-15  Package + SHA-256 + artifact                               ⏭ NEXT
 DC-16  Final qualification report + 12-Factor matrix              ⏳
 ```
 
-Les preuves historiques de la baseline native ne qualifient pas cette variante Docker Compose. DC-11, DC-12 et DC-13 constituent désormais ses qualifications propres et successives : statique/config, DEV Full runtime puis STG-like runtime immuable.
+Les preuves historiques de la baseline native ne qualifient pas cette variante Docker Compose. DC-11, DC-12, DC-13 et DC-14 constituent désormais ses qualifications propres et successives : statique/config, DEV Full runtime, STG-like runtime immuable, puis convergence stricte sans drift.
