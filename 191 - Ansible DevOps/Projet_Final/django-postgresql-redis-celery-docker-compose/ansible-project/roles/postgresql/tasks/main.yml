@@ -1,0 +1,105 @@
+---
+- name: Validate PostgreSQL role prerequisites
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] is version('24.04', '>=')
+      - vault_postgresql_password is defined
+      - vault_postgresql_password | length > 0
+      - postgresql_allowed_cidrs | length > 0
+    fail_msg: >-
+      The PostgreSQL role requires Ubuntu 24.04+, a non-empty
+      vault_postgresql_password and at least one allowed application CIDR.
+    quiet: true
+  no_log: true
+
+- name: Install PostgreSQL packages
+  ansible.builtin.apt:
+    name: "{{ postgresql_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure PostgreSQL service is enabled and started
+  ansible.builtin.service:
+    name: "{{ postgresql_service_name }}"
+    state: started
+    enabled: true
+
+- name: Ensure PostgreSQL conf.d directory exists
+  ansible.builtin.file:
+    path: "{{ postgresql_conf_d_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0755'
+
+- name: Ensure PostgreSQL loads conf.d
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_main_config_file }}"
+    regexp: '^#?\s*include_dir\s*='
+    line: "include_dir = 'conf.d'"
+    state: present
+  notify: Restart PostgreSQL
+
+- name: Install project PostgreSQL configuration
+  ansible.builtin.template:
+    src: 99-datascientest.conf.j2
+    dest: "{{ postgresql_conf_d_dir }}/99-datascientest.conf"
+    owner: postgres
+    group: postgres
+    mode: '0644'
+  notify: Restart PostgreSQL
+
+- name: Allow Django application network access to PostgreSQL
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_hba_file }}"
+    contype: host
+    databases: "{{ postgresql_database }}"
+    users: "{{ postgresql_user }}"
+    source: "{{ item }}"
+    method: scram-sha-256
+    state: present
+    create: false
+  loop: "{{ postgresql_allowed_cidrs }}"
+  notify: Reload PostgreSQL
+
+- name: Apply PostgreSQL configuration changes before provisioning objects
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for PostgreSQL to accept local TCP connections
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ postgresql_port }}"
+    state: started
+    timeout: 30
+
+- name: Create least-privilege Django PostgreSQL role
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: "{{ postgresql_user }}"
+    password: "{{ postgresql_password }}"
+    encrypted: true
+    role_attr_flags: NOSUPERUSER,NOCREATEDB,NOCREATEROLE
+    state: present
+  environment:
+    PGOPTIONS: "-c password_encryption={{ postgresql_password_encryption }}"
+  no_log: true
+
+- name: Create Django application database owned by application role
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    name: "{{ postgresql_database }}"
+    owner: "{{ postgresql_user }}"
+    encoding: UTF8
+    state: present
+
+- name: Verify PostgreSQL responds to a local SQL query
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    login_db: "{{ postgresql_database }}"
+    query: SELECT 1 AS healthcheck;
+  changed_when: false

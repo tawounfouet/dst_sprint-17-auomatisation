@@ -1,0 +1,8 @@
+.vault_pass
+*.pem
+*.key
+*.retry
+inventories/prod/hosts.yml
+inventories/prod/host_vars/server1.yml
+inventories/prod/group_vars/vault.yml
+django-postgresql-*.zip

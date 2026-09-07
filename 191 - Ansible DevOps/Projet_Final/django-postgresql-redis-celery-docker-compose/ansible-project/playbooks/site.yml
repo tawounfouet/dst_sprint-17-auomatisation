@@ -1,0 +1,166 @@
+---
+- name: Validate Django PostgreSQL Redis Celery mono-host topology
+  hosts: localhost
+  gather_facts: false
+  become: false
+  tags:
+    - always
+    - topology
+  tasks:
+    - name: Validate required inventory groups and mono-host contract
+      ansible.builtin.assert:
+        that:
+          - "'app' in groups"
+          - "'database' in groups"
+          - "groups['app'] | length == 1"
+          - "groups['database'] | length == 1"
+          - "groups['app'][0] == groups['database'][0]"
+        fail_msg: >-
+          This variant expects one mono-host server present in both the 'app'
+          and 'database' inventory groups.
+        quiet: true
+
+- name: Prepare mono-host server
+  hosts: all
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags:
+    - common
+  roles:
+    - role: common
+
+- name: Configure PostgreSQL
+  hosts: database
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
+  tags:
+    - database
+    - postgresql
+  pre_tasks:
+    - name: Validate PostgreSQL Vault secret
+      ansible.builtin.assert:
+        that:
+          - vault_postgresql_password is defined
+          - vault_postgresql_password | length >= 16
+          - vault_postgresql_password != 'CHANGE_ME_POSTGRES_PASSWORD'
+        fail_msg: >-
+          vault_postgresql_password must be defined in the encrypted
+          inventories/prod/group_vars/vault.yml file.
+        quiet: true
+      no_log: true
+  roles:
+    - role: postgresql
+
+- name: Configure Redis broker and result backend
+  hosts: app
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
+  tags:
+    - app
+    - redis
+  pre_tasks:
+    - name: Validate Redis Vault secret
+      ansible.builtin.assert:
+        that:
+          - vault_redis_password is defined
+          - vault_redis_password | length >= 16
+          - vault_redis_password != 'CHANGE_ME_REDIS_PASSWORD'
+        fail_msg: >-
+          vault_redis_password must be defined in the encrypted
+          inventories/prod/group_vars/vault.yml file.
+        quiet: true
+      no_log: true
+  roles:
+    - role: redis
+
+- name: Deploy Django application
+  hosts: app
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
+  tags:
+    - app
+    - django
+  pre_tasks:
+    - name: Validate Django runtime Vault secrets
+      ansible.builtin.assert:
+        that:
+          - vault_postgresql_password is defined
+          - vault_postgresql_password | length >= 16
+          - vault_postgresql_password != 'CHANGE_ME_POSTGRES_PASSWORD'
+          - vault_django_secret_key is defined
+          - vault_django_secret_key | length >= 32
+          - vault_django_secret_key != 'CHANGE_ME_DJANGO_SECRET_KEY'
+          - vault_redis_password is defined
+          - vault_redis_password | length >= 16
+          - vault_redis_password != 'CHANGE_ME_REDIS_PASSWORD'
+        fail_msg: >-
+          Django runtime secrets must be defined in the encrypted
+          inventories/prod/group_vars/vault.yml file.
+        quiet: true
+      no_log: true
+  roles:
+    - role: django_app
+
+- name: Configure Celery worker
+  hosts: app
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags:
+    - app
+    - celery
+  roles:
+    - role: celery
+
+- name: Configure Django Celery Beat
+  hosts: app
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
+  tags:
+    - app
+    - celery
+    - celery_beat
+  pre_tasks:
+    - name: Validate Celery Beat runtime Vault secrets
+      ansible.builtin.assert:
+        that:
+          - vault_postgresql_password is defined
+          - vault_postgresql_password | length >= 16
+          - vault_postgresql_password != 'CHANGE_ME_POSTGRES_PASSWORD'
+          - vault_django_secret_key is defined
+          - vault_django_secret_key | length >= 32
+          - vault_django_secret_key != 'CHANGE_ME_DJANGO_SECRET_KEY'
+          - vault_redis_password is defined
+          - vault_redis_password | length >= 16
+          - vault_redis_password != 'CHANGE_ME_REDIS_PASSWORD'
+        fail_msg: >-
+          Celery Beat runtime secrets must be defined in the encrypted
+          inventories/prod/group_vars/vault.yml file.
+        quiet: true
+      no_log: true
+  roles:
+    - role: celery_beat
+
+- name: Configure Nginx frontend
+  hosts: app
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags:
+    - app
+    - nginx
+  roles:
+    - role: nginx

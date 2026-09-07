@@ -1,0 +1,104 @@
+---
+- name: Validate Redis role prerequisites
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] is version('24.04', '>=')
+      - redis_password is defined
+      - redis_password | length >= 16
+      - redis_password != 'CHANGE_ME_REDIS_PASSWORD'
+    fail_msg: >-
+      Redis requires Ubuntu 24.04+ and a non-placeholder
+      vault_redis_password of at least 16 characters.
+    quiet: true
+  no_log: true
+
+- name: Install Redis packages
+  ansible.builtin.apt:
+    name: "{{ redis_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Bind Redis to localhost only
+  ansible.builtin.lineinfile:
+    path: "{{ redis_config_file }}"
+    regexp: '^bind\s+.*$'
+    line: "bind {{ redis_bind_address }}"
+    owner: redis
+    group: redis
+    mode: '0640'
+  notify: Restart Redis
+
+- name: Enable Redis protected mode
+  ansible.builtin.lineinfile:
+    path: "{{ redis_config_file }}"
+    regexp: '^protected-mode\s+.*$'
+    line: "protected-mode {{ redis_protected_mode }}"
+    owner: redis
+    group: redis
+    mode: '0640'
+  notify: Restart Redis
+
+- name: Configure Redis TCP port
+  ansible.builtin.lineinfile:
+    path: "{{ redis_config_file }}"
+    regexp: '^port\s+.*$'
+    line: "port {{ redis_port }}"
+    owner: redis
+    group: redis
+    mode: '0640'
+  notify: Restart Redis
+
+- name: Configure Redis systemd supervision
+  ansible.builtin.lineinfile:
+    path: "{{ redis_config_file }}"
+    regexp: '^supervised\s+.*$'
+    line: "supervised {{ redis_supervised_mode }}"
+    owner: redis
+    group: redis
+    mode: '0640'
+  notify: Restart Redis
+
+- name: Configure Redis authentication password
+  ansible.builtin.lineinfile:
+    path: "{{ redis_config_file }}"
+    regexp: '^\s*#?\s*requirepass\s+.*$'
+    line: "requirepass {{ redis_password }}"
+    owner: redis
+    group: redis
+    mode: '0640'
+  notify: Restart Redis
+  no_log: true
+
+- name: Apply pending Redis configuration changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure Redis is enabled and started
+  ansible.builtin.service:
+    name: "{{ redis_service_name }}"
+    state: started
+    enabled: true
+
+- name: Wait for Redis localhost port
+  ansible.builtin.wait_for:
+    host: "{{ redis_bind_address }}"
+    port: "{{ redis_port }}"
+    state: started
+    timeout: 30
+
+- name: Validate authenticated Redis PING
+  ansible.builtin.command:
+    argv:
+      - redis-cli
+      - -h
+      - "{{ redis_bind_address }}"
+      - -p
+      - "{{ redis_port | string }}"
+      - ping
+  environment:
+    REDISCLI_AUTH: "{{ redis_password }}"
+  register: redis_ping_result
+  changed_when: false
+  failed_when: redis_ping_result.stdout | trim != 'PONG'
+  no_log: true

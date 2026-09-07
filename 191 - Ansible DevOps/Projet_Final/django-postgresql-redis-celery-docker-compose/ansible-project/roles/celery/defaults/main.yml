@@ -1,0 +1,15 @@
+---
+celery_service_name: datascientest-celery
+celery_app_module: config
+celery_loglevel: INFO
+celery_concurrency: 2
+celery_hostname: worker1@%H
+
+django_system_user: django
+django_system_group: django
+django_install_dir: /opt/datascientest-django
+django_venv_dir: "{{ django_install_dir }}/.venv"
+django_environment_file: /etc/datascientest-django/django.env
+
+redis_host: 127.0.0.1
+redis_port: 6379

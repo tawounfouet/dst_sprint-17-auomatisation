@@ -1,0 +1,23 @@
+[Unit]
+Description=DataScientest Celery Beat Scheduler
+After=network.target redis-server.service postgresql.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User={{ django_system_user }}
+Group={{ django_system_group }}
+WorkingDirectory={{ django_install_dir }}
+EnvironmentFile={{ django_environment_file }}
+RuntimeDirectory=datascientest-celery-beat
+RuntimeDirectoryMode=0755
+ExecStart={{ django_venv_dir }}/bin/celery -A {{ celery_app_module }} beat --loglevel={{ celery_beat_loglevel }} --scheduler django_celery_beat.schedulers:DatabaseScheduler --pidfile=/run/datascientest-celery-beat/beat.pid
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

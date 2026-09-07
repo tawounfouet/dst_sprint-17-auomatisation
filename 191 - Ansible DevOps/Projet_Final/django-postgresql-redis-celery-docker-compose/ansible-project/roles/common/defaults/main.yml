@@ -1,0 +1,15 @@
+---
+common_apt_cache_valid_time: 3600
+common_timezone: Europe/Paris
+common_manage_timezone: true
+
+common_packages:
+  - ca-certificates
+  - curl
+  - git
+  - lsof
+  - netcat-openbsd
+  - procps
+  - python3
+  - python3-apt
+  - tzdata

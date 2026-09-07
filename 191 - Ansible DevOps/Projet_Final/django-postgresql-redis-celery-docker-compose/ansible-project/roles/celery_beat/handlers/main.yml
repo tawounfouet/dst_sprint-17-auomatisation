@@ -1,0 +1,6 @@
+---
+- name: Restart Celery Beat
+  ansible.builtin.systemd_service:
+    name: "{{ celery_beat_service_name }}"
+    state: restarted
+    daemon_reload: true
