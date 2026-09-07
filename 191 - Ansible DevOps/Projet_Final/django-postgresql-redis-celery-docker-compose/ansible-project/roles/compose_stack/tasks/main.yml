@@ -5,22 +5,52 @@
       - compose_stack_environment in compose_stack_allowed_environments
       - compose_stack_app_image | length > 0
       - compose_stack_runtime_environment is mapping
-      - "'APP_IMAGE' in compose_stack_runtime_environment"
-      - "'APPLICATION_ENV' in compose_stack_runtime_environment"
-      - "'DJANGO_SETTINGS_MODULE' in compose_stack_runtime_environment"
-      - "'DJANGO_SECRET_KEY' in compose_stack_runtime_environment"
-      - "'DATABASE_URL' in compose_stack_runtime_environment"
-      - "'CELERY_BROKER_URL' in compose_stack_runtime_environment"
-      - "'CELERY_RESULT_BACKEND' in compose_stack_runtime_environment"
-      - "'POSTGRES_DB' in compose_stack_runtime_environment"
-      - "'POSTGRES_USER' in compose_stack_runtime_environment"
-      - "'POSTGRES_PASSWORD' in compose_stack_runtime_environment"
-      - "'REDIS_PASSWORD' in compose_stack_runtime_environment"
+      - compose_stack_required_runtime_keys | difference(compose_stack_runtime_environment.keys() | list) | length == 0
       - compose_stack_runtime_environment.APPLICATION_ENV == compose_stack_environment
       - compose_stack_runtime_environment.APP_IMAGE == compose_stack_app_image
     fail_msg: >-
       compose_stack requires a supported environment, an APP_IMAGE and the
       complete runtime environment contract.
+    quiet: true
+  no_log: true
+
+- name: Validate sensitive runtime values
+  ansible.builtin.assert:
+    that:
+      - compose_stack_runtime_environment.DJANGO_SECRET_KEY | length >= compose_stack_django_secret_key_min_length
+      - compose_stack_runtime_environment.POSTGRES_PASSWORD | length >= compose_stack_postgresql_password_min_length
+      - compose_stack_runtime_environment.REDIS_PASSWORD | length >= compose_stack_redis_password_min_length
+      - compose_stack_runtime_environment.DJANGO_SECRET_KEY != compose_stack_runtime_environment.POSTGRES_PASSWORD
+      - compose_stack_runtime_environment.DJANGO_SECRET_KEY != compose_stack_runtime_environment.REDIS_PASSWORD
+      - compose_stack_runtime_environment.POSTGRES_PASSWORD != compose_stack_runtime_environment.REDIS_PASSWORD
+      - "'CHANGE_ME' not in compose_stack_runtime_environment.DJANGO_SECRET_KEY"
+      - "'CHANGE_ME' not in compose_stack_runtime_environment.POSTGRES_PASSWORD"
+      - "'CHANGE_ME' not in compose_stack_runtime_environment.REDIS_PASSWORD"
+      - "'REPLACE_ME' not in compose_stack_runtime_environment.DJANGO_SECRET_KEY"
+      - "'REPLACE_ME' not in compose_stack_runtime_environment.POSTGRES_PASSWORD"
+      - "'REPLACE_ME' not in compose_stack_runtime_environment.REDIS_PASSWORD"
+      - "'SET_IN_ENCRYPTED_VAULT' not in compose_stack_runtime_environment.DJANGO_SECRET_KEY"
+      - "'SET_IN_ENCRYPTED_VAULT' not in compose_stack_runtime_environment.POSTGRES_PASSWORD"
+      - "'SET_IN_ENCRYPTED_VAULT' not in compose_stack_runtime_environment.REDIS_PASSWORD"
+    fail_msg: >-
+      Runtime secrets must satisfy minimum lengths, must be distinct and must
+      not contain placeholder markers.
+    quiet: true
+  no_log: true
+
+- name: Validate derived service URLs
+  ansible.builtin.assert:
+    that:
+      - compose_stack_runtime_environment.DATABASE_URL is match('^postgresql://')
+      - "'@db:5432/' in compose_stack_runtime_environment.DATABASE_URL"
+      - "'sqlite' not in (compose_stack_runtime_environment.DATABASE_URL | lower)"
+      - compose_stack_runtime_environment.CELERY_BROKER_URL is match('^redis://')
+      - compose_stack_runtime_environment.CELERY_RESULT_BACKEND is match('^redis://')
+      - "'@redis:6379/' in compose_stack_runtime_environment.CELERY_BROKER_URL"
+      - "'@redis:6379/' in compose_stack_runtime_environment.CELERY_RESULT_BACKEND"
+    fail_msg: >-
+      DATABASE_URL and Celery Redis URLs must target the internal Compose
+      services using the expected schemes and service names.
     quiet: true
   no_log: true
 
@@ -38,7 +68,10 @@
   ansible.builtin.assert:
     that:
       - compose_stack_runtime_environment.DJANGO_SETTINGS_MODULE == 'config.settings.' ~ compose_stack_environment
-    fail_msg: DJANGO_SETTINGS_MODULE must match deployment_environment exactly.
+      - compose_stack_environment == 'dev' or compose_stack_runtime_environment.DJANGO_DEBUG == 'false'
+    fail_msg: >-
+      DJANGO_SETTINGS_MODULE must match deployment_environment exactly and
+      DJANGO_DEBUG must be false outside development.
     quiet: true
 
 - name: Create Compose release directories
@@ -81,14 +114,40 @@
     - compose_stack_environment == 'dev'
     - compose_stack_copy_application_source_in_dev | bool
 
+- name: Remove legacy plaintext runtime environment files
+  ansible.builtin.file:
+    path: "{{ compose_stack_project_directory }}/{{ item }}"
+    state: absent
+  loop: "{{ compose_stack_legacy_runtime_secret_files }}"
+  no_log: true
+
 - name: Render protected Compose runtime environment
   ansible.builtin.template:
     src: runtime.env.j2
     dest: "{{ compose_stack_project_directory }}/{{ compose_stack_runtime_env_file }}"
-    owner: root
-    group: root
-    mode: '0600'
+    owner: "{{ compose_stack_runtime_env_owner }}"
+    group: "{{ compose_stack_runtime_env_group }}"
+    mode: "{{ compose_stack_runtime_env_mode }}"
+    backup: false
   no_log: true
+
+- name: Inspect protected runtime environment metadata
+  ansible.builtin.stat:
+    path: "{{ compose_stack_project_directory }}/{{ compose_stack_runtime_env_file }}"
+  register: compose_stack_runtime_env_stat
+
+- name: Enforce protected runtime environment permissions
+  ansible.builtin.assert:
+    that:
+      - compose_stack_runtime_env_stat.stat.exists
+      - compose_stack_runtime_env_stat.stat.isreg
+      - compose_stack_runtime_env_stat.stat.uid == 0
+      - compose_stack_runtime_env_stat.stat.gid == 0
+      - compose_stack_runtime_env_stat.stat.mode == compose_stack_runtime_env_mode
+    fail_msg: >-
+      The Compose runtime environment must be a root-owned regular file with
+      mode {{ compose_stack_runtime_env_mode }}.
+    quiet: true
 
 - name: Validate merged Compose configuration
   ansible.builtin.command:

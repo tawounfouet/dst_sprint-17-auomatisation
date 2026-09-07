@@ -20,7 +20,38 @@ compose_stack_overlay_file: "compose.{{ compose_stack_environment }}.yml"
 compose_stack_files:
   - "{{ compose_stack_base_file }}"
   - "{{ compose_stack_overlay_file }}"
+
 compose_stack_runtime_env_file: .env.runtime
+compose_stack_runtime_env_owner: root
+compose_stack_runtime_env_group: root
+compose_stack_runtime_env_mode: "0600"
+compose_stack_legacy_runtime_secret_files:
+  - .env
+  - .env.dev
+  - .env.stg
+  - .env.prod
+
+compose_stack_required_runtime_keys:
+  - APP_IMAGE
+  - APPLICATION_ENV
+  - DJANGO_SETTINGS_MODULE
+  - DJANGO_SECRET_KEY
+  - DATABASE_URL
+  - CELERY_BROKER_URL
+  - CELERY_RESULT_BACKEND
+  - POSTGRES_DB
+  - POSTGRES_USER
+  - POSTGRES_PASSWORD
+  - REDIS_PASSWORD
+
+compose_stack_django_secret_key_min_length: 50
+compose_stack_postgresql_password_min_length: 24
+compose_stack_redis_password_min_length: 24
+compose_stack_forbidden_secret_markers:
+  - CHANGE_ME
+  - REPLACE_ME
+  - EXAMPLE_ONLY
+  - SET_IN_ENCRYPTED_VAULT
 
 compose_stack_app_image: "{{ app_image | default('') }}"
 compose_stack_runtime_environment: {}

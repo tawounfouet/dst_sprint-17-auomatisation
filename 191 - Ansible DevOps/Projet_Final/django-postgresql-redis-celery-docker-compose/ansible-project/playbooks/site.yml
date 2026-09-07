@@ -35,21 +35,30 @@
       tags:
         - always
 
-    - name: Validate runtime secrets
+    - name: Validate Vault environment binding and secret quality
       ansible.builtin.assert:
         that:
-          - vault_postgresql_password is defined
-          - vault_postgresql_password | length >= 16
-          - vault_postgresql_password != 'CHANGE_ME_POSTGRES_PASSWORD'
-          - vault_redis_password is defined
-          - vault_redis_password | length >= 16
-          - vault_redis_password != 'CHANGE_ME_REDIS_PASSWORD'
-          - vault_django_secret_key is defined
-          - vault_django_secret_key | length >= 32
-          - vault_django_secret_key != 'CHANGE_ME_DJANGO_SECRET_KEY'
+          - (vault_environment | default('')) == deployment_environment
+          - (vault_secret_generation | default(0) | int) >= 1
+          - (vault_postgresql_password | default('')) | length >= 24
+          - (vault_redis_password | default('')) | length >= 24
+          - (vault_django_secret_key | default('')) | length >= 50
+          - "'CHANGE_ME' not in (vault_postgresql_password | default('CHANGE_ME'))"
+          - "'CHANGE_ME' not in (vault_redis_password | default('CHANGE_ME'))"
+          - "'CHANGE_ME' not in (vault_django_secret_key | default('CHANGE_ME'))"
+          - "'REPLACE_ME' not in (vault_postgresql_password | default('REPLACE_ME'))"
+          - "'REPLACE_ME' not in (vault_redis_password | default('REPLACE_ME'))"
+          - "'REPLACE_ME' not in (vault_django_secret_key | default('REPLACE_ME'))"
+          - "'SET_IN_ENCRYPTED_VAULT' not in (vault_postgresql_password | default('SET_IN_ENCRYPTED_VAULT'))"
+          - "'SET_IN_ENCRYPTED_VAULT' not in (vault_redis_password | default('SET_IN_ENCRYPTED_VAULT'))"
+          - "'SET_IN_ENCRYPTED_VAULT' not in (vault_django_secret_key | default('SET_IN_ENCRYPTED_VAULT'))"
+          - vault_postgresql_password != vault_redis_password
+          - vault_postgresql_password != vault_django_secret_key
+          - vault_redis_password != vault_django_secret_key
         fail_msg: >-
-          Runtime secrets must be defined in the encrypted Vault file for the
-          selected environment.
+          The selected Vault must be bound to the same deployment environment,
+          expose generation >= 1, use distinct non-placeholder secrets, and
+          satisfy the minimum secret lengths.
         quiet: true
       no_log: true
       tags:

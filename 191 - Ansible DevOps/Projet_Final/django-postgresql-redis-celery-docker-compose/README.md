@@ -18,7 +18,7 @@ MULTI-ENV COMPOSE               ✅ IMPLEMENTED
 ANSIBLE DOCKER ENGINE           ✅ IMPLEMENTED
 ANSIBLE COMPOSE DEPLOY          ✅ IMPLEMENTED
 INVENTORIES DEV/STG/PROD        ✅ IMPLEMENTED
-SECRETS / ENV HARDENING         ⏳
+SECURE RUNTIME CONFIGURATION    ✅ IMPLEMENTED
 RUNTIME HARDENING               ⏳
 STATIC GATE                     ⏳
 COMPOSE E2E                     ⏳
@@ -30,8 +30,6 @@ FINAL REPORT                    ⏳
 Aucun statut runtime GREEN n'est revendiqué tant que les futurs gates Ansible/Docker/Compose/CI n'ont pas été réellement exécutés.
 
 ## Django / DRF / configuration
-
-La configuration est multi-environnement :
 
 ```text
 django-app/config/settings/
@@ -50,7 +48,7 @@ DEV Full Compose                → PostgreSQL obligatoire
 STG/PROD                        → PostgreSQL obligatoire, SQLite interdit
 ```
 
-L'API asynchrone utilise Django REST Framework et conserve les endpoints Celery historiques.
+Django utilise `django-environ`. En STG/PROD, `SECRET_KEY` doit désormais être une valeur non-placeholder d'au moins 50 caractères et les URLs Celery doivent utiliser Redis.
 
 ## Image 12-Factor
 
@@ -65,7 +63,7 @@ Une seule image applicative non-root sert à :
 
 Dépendances au build, logs stdout/stderr, SIGTERM, pas de migration automatique au boot.
 
-## Docker Compose
+## Docker Compose multi-environnement
 
 ```text
 docker/
@@ -75,22 +73,11 @@ docker/
 └── compose.prod.yml
 ```
 
-Services :
+Services : `nginx`, `web`, `db`, `redis`, `worker`, `beat`.
 
-```text
-nginx
-web
-db
-redis
-worker
-beat
-```
+DEV Full construit localement l'image commune. STG/PROD exigent une `APP_IMAGE` déjà construite et référencée par digest.
 
-DEV Full construit localement l'image commune. STG/PROD exigent une `APP_IMAGE` déjà construite et ne buildent pas sur le serveur.
-
-## Orchestration Ansible active — DC-08
-
-Le point d'entrée actif est désormais :
+## Orchestration Ansible active
 
 ```text
 common
@@ -102,54 +89,79 @@ compose_stack
 
 Les anciens rôles natifs `postgresql`, `redis`, `django_app`, `celery`, `celery_beat` et `nginx` restent comme référence historique mais ne sont plus appelés par `playbooks/site.yml`.
 
-Le rôle `compose_stack` :
+## Secure Runtime Configuration — DC-09
+
+Le chemin de configuration est maintenant :
 
 ```text
-valide environment + APP_IMAGE
-        ↓
-déploie docker/ sous /opt/datascientest-compose
-        ↓
-rend .env.runtime en 0600
-        ↓
-docker compose config --quiet
-        ↓
-démarre db + redis + web
-        ↓
-migrate / collectstatic / PeriodicTask en one-shot
-        ↓
-converge les 6 services avec docker_compose_v2
+Vault DEV/STG/PROD
+       ↓
+validation environment + génération + qualité
+       ↓
+urlencode des credentials dérivés
+       ↓
+compose_stack_runtime_environment
+       ↓
+.env.runtime root:root 0600
+       ↓
+Docker Compose
 ```
 
-En STG/PROD, `APP_IMAGE` doit correspondre strictement à :
+Chaque Vault réel doit être lié à son environnement avec :
 
 ```text
-registry/path/image@sha256:<64 hex>
-```
-
-## Inventories
-
-```text
-ansible-project/inventories/
-├── dev/
-├── stg/
-└── prod/
-```
-
-Chaque environnement fournit des exemples de `hosts`, `host_vars`, `group_vars/all.yml` et `vault.example.yml`. Les vrais `hosts.yml`, `host_vars/server1.yml` et `vault.yml` sont ignorés par Git.
-
-La topologie active ne contient plus de groupe `database` : un seul hôte `app` héberge Docker et PostgreSQL vit dans la stack Compose.
-
-## Secrets
-
-Les trois secrets de base restent :
-
-```text
+vault_environment
+vault_secret_generation
 vault_django_secret_key
 vault_postgresql_password
 vault_redis_password
 ```
 
-Ils alimentent un fichier runtime distant protégé ; les passwords sont URL-encodés lorsqu'ils entrent dans `DATABASE_URL` et les URLs Redis. DC-09 renforcera la gestion complète du lifecycle et les gates anti-fuite.
+Le preflight refuse : mauvais environnement, génération absente, secrets trop courts, placeholders ou réutilisation de la même valeur entre Django/PostgreSQL/Redis.
+
+Le rôle `compose_stack` vérifie aussi les URLs :
+
+```text
+DATABASE_URL          → postgresql://...@db:5432/...
+CELERY_BROKER_URL     → redis://...@redis:6379/...
+CELERY_RESULT_BACKEND → redis://...@redis:6379/...
+SQLite Compose        → interdit
+```
+
+Le seul fichier runtime attendu est :
+
+```text
+/opt/datascientest-compose/docker/.env.runtime
+owner=root group=root mode=0600
+```
+
+Les anciens `.env`, `.env.dev`, `.env.stg`, `.env.prod` distants sont supprimés avant rendu. Les tâches sensibles utilisent `no_log: true`.
+
+## Anti-secret hygiene
+
+Le scanner :
+
+```text
+ansible-project/scripts/secret_hygiene.py
+```
+
+supporte :
+
+```text
+repo     → Git tracked files
+tree     → logs / fichiers / répertoires
+archive  → ZIP
+```
+
+`preflight.sh` l'exécute sur le repository, `deploy.sh`/`validate_runtime.sh` sur leurs logs et `package.sh` avant puis après création du ZIP. Un fichier local `SECRET_VALUES_FILE` permet plus tard de rechercher exactement des valeurs canaris sans les afficher.
+
+La politique de rotation est dans :
+
+```text
+SECURITY_SECRET_ROTATION_POLICY.md
+```
+
+Les secrets ne sont jamais promus entre environnements ; seule l'image Docker l'est. La rotation PostgreSQL nécessite une opération SQL coordonnée sur une base déjà initialisée : changer `POSTGRES_PASSWORD` seul ne suffit pas.
 
 ## Contrat réseau cible
 
@@ -174,8 +186,8 @@ DC-05  Base Docker Compose stack                                  ✅ IMPLEMENTE
 DC-06  Multi-environment Compose                                  ✅ IMPLEMENTED
 DC-07  Ansible docker_engine                                      ✅ IMPLEMENTED
 DC-08  Ansible compose_stack + inventories dev/stg/prod           ✅ IMPLEMENTED
-DC-09  Secure runtime configuration                               ⏭ NEXT
-DC-10  Runtime hardening                                          ⏳
+DC-09  Secure runtime configuration                               ✅ IMPLEMENTED
+DC-10  Runtime hardening                                          ⏭ NEXT
 DC-11  Unit tests + static gate                                   ⏳
 DC-12  DEV Full E2E                                               ⏳
 DC-13  STG-like E2E + anti-SQLite tests                           ⏳

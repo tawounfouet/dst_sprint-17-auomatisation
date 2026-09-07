@@ -32,6 +32,16 @@ APPLICATION_VERSION = env("APPLICATION_VERSION", default="0.0.0-dev")
 APPLICATION_COMMIT = env("APPLICATION_COMMIT", default="local")
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
+if APPLICATION_ENV in {"stg", "prod"}:
+    if len(SECRET_KEY) < 50 or any(
+        marker in SECRET_KEY
+        for marker in ("CHANGE_ME", "REPLACE_ME", "SET_IN_ENCRYPTED_VAULT")
+    ):
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY must be a non-placeholder value of at least "
+            "50 characters in staging and production."
+        )
+
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list(
     "DJANGO_ALLOWED_HOSTS",
@@ -126,6 +136,14 @@ CELERY_RESULT_BACKEND = _required_runtime_url(
     "CELERY_RESULT_BACKEND",
     "redis://127.0.0.1:6379/1",
 )
+if APPLICATION_ENV in {"stg", "prod"}:
+    if not CELERY_BROKER_URL.startswith("redis://"):
+        raise ImproperlyConfigured("CELERY_BROKER_URL must use Redis outside development.")
+    if not CELERY_RESULT_BACKEND.startswith("redis://"):
+        raise ImproperlyConfigured(
+            "CELERY_RESULT_BACKEND must use Redis outside development."
+        )
+
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
