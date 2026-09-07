@@ -1,0 +1,34 @@
+x-dev-build: &dev-build
+  context: ../django-app
+  dockerfile: Dockerfile
+  args:
+    APPLICATION_VERSION: ${APPLICATION_VERSION:-0.0.0-dev}
+    APPLICATION_COMMIT: ${APPLICATION_COMMIT:-local}
+
+x-dev-environment: &dev-environment
+  APPLICATION_ENV: dev
+  DJANGO_SETTINGS_MODULE: config.settings.dev
+  DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
+
+services:
+  web:
+    image: ${APP_IMAGE:-datascientest-django:dev}
+    build: *dev-build
+    environment:
+      <<: *dev-environment
+
+  worker:
+    image: ${APP_IMAGE:-datascientest-django:dev}
+    build: *dev-build
+    environment:
+      <<: *dev-environment
+
+  beat:
+    image: ${APP_IMAGE:-datascientest-django:dev}
+    build: *dev-build
+    environment:
+      <<: *dev-environment
+
+  nginx:
+    ports:
+      - "127.0.0.1:${NGINX_HTTP_PORT:-8080}:80"
