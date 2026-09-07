@@ -154,6 +154,8 @@
     argv:
       - docker
       - compose
+      - --project-name
+      - "{{ compose_stack_project_name }}"
       - --env-file
       - "{{ compose_stack_runtime_env_file }}"
       - -f
@@ -191,6 +193,7 @@
       {{
         [
           'docker', 'compose',
+          '--project-name', compose_stack_project_name,
           '--env-file', compose_stack_runtime_env_file,
           '-f', compose_stack_base_file,
           '-f', compose_stack_overlay_file,
@@ -214,6 +217,7 @@
       {{
         [
           'docker', 'compose',
+          '--project-name', compose_stack_project_name,
           '--env-file', compose_stack_runtime_env_file,
           '-f', compose_stack_base_file,
           '-f', compose_stack_overlay_file,
@@ -237,6 +241,7 @@
       {{
         [
           'docker', 'compose',
+          '--project-name', compose_stack_project_name,
           '--env-file', compose_stack_runtime_env_file,
           '-f', compose_stack_base_file,
           '-f', compose_stack_overlay_file,
@@ -278,6 +283,8 @@
     argv:
       - docker
       - compose
+      - --project-name
+      - "{{ compose_stack_project_name }}"
       - --env-file
       - "{{ compose_stack_runtime_env_file }}"
       - -f
