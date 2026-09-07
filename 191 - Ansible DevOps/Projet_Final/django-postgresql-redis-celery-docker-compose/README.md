@@ -22,7 +22,7 @@ DJANGO-ENVIRON                  ✅ IMPLEMENTED
 MULTI-ENV DEV/STG/PROD          ✅ IMPLEMENTED
 SQLITE DEV-ONLY POLICY          ✅ IMPLEMENTED
 DJANGO REST FRAMEWORK           ✅ IMPLEMENTED
-12-FACTOR DOCKER IMAGE          ⏳
+12-FACTOR DOCKER IMAGE          ✅ IMPLEMENTED
 DOCKER COMPOSE                  ⏳
 ANSIBLE DOCKER ENGINE           ⏳
 ANSIBLE COMPOSE DEPLOY          ⏳
@@ -34,6 +34,8 @@ STRICT IDEMPOTENCE              ⏳
 PACKAGE + SHA-256               ⏳
 FINAL REPORT                    ⏳
 ```
+
+`IMPLEMENTED` ne signifie pas encore `GREEN` : l'image n'est pas déclarée qualifiée tant qu'un `docker build` et les validations runtime/CI dédiées n'ont pas été observés.
 
 ## Configuration Django
 
@@ -83,7 +85,7 @@ DEV Full  → Docker Compose + PostgreSQL + Redis + Celery + Beat + Nginx
 
 ## Django REST Framework
 
-L'API asynchrone utilise maintenant réellement DRF :
+L'API asynchrone utilise réellement DRF :
 
 ```text
 POST /api/tasks/add/
@@ -108,6 +110,47 @@ tasks_demo/views.py
 Les contrats existants sont conservés : validations strictes, HTTP 202 pour les soumissions, `invalid_json`, erreurs métier stables et absence de fuite d'exception Celery.
 
 DEV active le `BrowsableAPIRenderer`; STG/PROD restent JSON-only.
+
+## Image Docker 12-Factor
+
+L'image applicative est définie dans :
+
+```text
+django-app/
+├── Dockerfile
+├── .dockerignore
+└── docker/
+    ├── entrypoint.sh
+    └── gunicorn.conf.py
+```
+
+Contrats déjà implémentés :
+
+```text
+multi-stage build
+Python 3.12 slim runtime
+installation des dépendances au build
+aucun pip install au démarrage
+utilisateur non-root app:10001
+une seule image pour web/worker/beat
+Gunicorn → 0.0.0.0:8000 interne
+logs Gunicorn → stdout/stderr
+STOPSIGNAL SIGTERM
+entrypoint → exec "$@"
+APPLICATION_VERSION / APPLICATION_COMMIT baked comme metadata
+APPLICATION_ENV injecté uniquement au runtime
+aucun .env réel dans le contexte Docker
+aucune migration automatique au boot
+```
+
+L'entrypoint exige aussi explicitement :
+
+```text
+APPLICATION_ENV=dev|stg|prod
+DJANGO_SETTINGS_MODULE=config.settings.<environment>
+```
+
+Cela évite qu'un conteneur STG/PROD mal configuré démarre implicitement en DEV et puisse utiliser SQLite.
 
 ## Architecture cible
 
@@ -138,7 +181,7 @@ worker
 beat
 ```
 
-`web`, `worker` et `beat` utiliseront la même image applicative.
+`web`, `worker` et `beat` utiliseront la même image applicative et ne différeront que par leur commande/process type.
 
 ## Contrat réseau cible
 
@@ -182,8 +225,8 @@ DC-00  Controlled baseline copy                                  ✅
 DC-01  Docker/Compose architecture contracts                      ✅ DESIGN
 DC-02  Django configuration foundation                            ✅ IMPLEMENTED
 DC-03  Django REST Framework                                      ✅ IMPLEMENTED
-DC-04  12-Factor Docker image                                     ⏭ NEXT
-DC-05  Base Docker Compose stack                                  ⏳
+DC-04  12-Factor Docker image                                     ✅ IMPLEMENTED
+DC-05  Base Docker Compose stack                                  ⏭ NEXT
 DC-06  Multi-environment Compose                                  ⏳
 DC-07  Ansible docker_engine                                      ⏳
 DC-08  Ansible compose_stack + inventories dev/stg/prod           ⏳
@@ -197,4 +240,4 @@ DC-15  Package + SHA-256 + artifact                               ⏳
 DC-16  Final qualification report + 12-Factor matrix              ⏳
 ```
 
-Le plan canonique complet est `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md`. Les jalons courants sont documentés dans `DC_02_DJANGO_CONFIGURATION_FOUNDATION.md` et `DC_03_DJANGO_REST_FRAMEWORK.md`.
+Le plan canonique complet est `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md`. Les jalons déjà implémentés sont documentés dans `DC_02_DJANGO_CONFIGURATION_FOUNDATION.md`, `DC_03_DJANGO_REST_FRAMEWORK.md` et `DC_04_12_FACTOR_DOCKER_IMAGE.md`.
