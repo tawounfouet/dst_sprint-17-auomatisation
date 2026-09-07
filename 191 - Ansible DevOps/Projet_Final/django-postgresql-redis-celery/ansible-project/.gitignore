@@ -4,7 +4,5 @@
 *.retry
 inventories/prod/hosts.yml
 inventories/prod/host_vars/server1.yml
-inventories/prod/host_vars/app1.yml
-inventories/prod/host_vars/db1.yml
 inventories/prod/group_vars/vault.yml
 django-postgresql-*.zip
