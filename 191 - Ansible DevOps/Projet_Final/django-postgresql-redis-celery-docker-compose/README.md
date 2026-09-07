@@ -21,7 +21,7 @@ DJANGO CONFIG FOUNDATION        ✅ IMPLEMENTED
 DJANGO-ENVIRON                  ✅ IMPLEMENTED
 MULTI-ENV DEV/STG/PROD          ✅ IMPLEMENTED
 SQLITE DEV-ONLY POLICY          ✅ IMPLEMENTED
-DJANGO REST FRAMEWORK           ⏳
+DJANGO REST FRAMEWORK           ✅ IMPLEMENTED
 12-FACTOR DOCKER IMAGE          ⏳
 DOCKER COMPOSE                  ⏳
 ANSIBLE DOCKER ENGINE           ⏳
@@ -37,7 +37,7 @@ FINAL REPORT                    ⏳
 
 ## Configuration Django
 
-La configuration est désormais structurée ainsi :
+La configuration est structurée ainsi :
 
 ```text
 django-app/config/settings/
@@ -74,12 +74,40 @@ STG/PROD + PostgreSQL           → PostgreSQL ✅
 
 Aucun fallback sur erreur de connexion PostgreSQL n'est autorisé.
 
-Deux modes DEV sont donc prévus :
+Deux modes DEV sont prévus :
 
 ```text
 DEV Lite  → Django local + SQLite
 DEV Full  → Docker Compose + PostgreSQL + Redis + Celery + Beat + Nginx
 ```
+
+## Django REST Framework
+
+L'API asynchrone utilise maintenant réellement DRF :
+
+```text
+POST /api/tasks/add/
+POST /api/tasks/uppercase/
+POST /api/tasks/database-probe/
+GET  /api/tasks/<task_id>/
+```
+
+Composants principaux :
+
+```text
+tasks_demo/serializers.py
+├── AddTaskSerializer
+├── UppercaseTaskSerializer
+├── TaskAcceptedSerializer
+└── TaskStatusSerializer
+
+tasks_demo/views.py
+└── @api_view + Response
+```
+
+Les contrats existants sont conservés : validations strictes, HTTP 202 pour les soumissions, `invalid_json`, erreurs métier stables et absence de fuite d'exception Celery.
+
+DEV active le `BrowsableAPIRenderer`; STG/PROD restent JSON-only.
 
 ## Architecture cible
 
@@ -153,8 +181,8 @@ Les anciens rôles systemd restent dans la copie comme référence de migration 
 DC-00  Controlled baseline copy                                  ✅
 DC-01  Docker/Compose architecture contracts                      ✅ DESIGN
 DC-02  Django configuration foundation                            ✅ IMPLEMENTED
-DC-03  Django REST Framework                                      ⏭ NEXT
-DC-04  12-Factor Docker image                                     ⏳
+DC-03  Django REST Framework                                      ✅ IMPLEMENTED
+DC-04  12-Factor Docker image                                     ⏭ NEXT
 DC-05  Base Docker Compose stack                                  ⏳
 DC-06  Multi-environment Compose                                  ⏳
 DC-07  Ansible docker_engine                                      ⏳
@@ -169,4 +197,4 @@ DC-15  Package + SHA-256 + artifact                               ⏳
 DC-16  Final qualification report + 12-Factor matrix              ⏳
 ```
 
-Le plan canonique complet est `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md`. Le jalon courant est documenté dans `DC_02_DJANGO_CONFIGURATION_FOUNDATION.md`.
+Le plan canonique complet est `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md`. Les jalons courants sont documentés dans `DC_02_DJANGO_CONFIGURATION_FOUNDATION.md` et `DC_03_DJANGO_REST_FRAMEWORK.md`.
