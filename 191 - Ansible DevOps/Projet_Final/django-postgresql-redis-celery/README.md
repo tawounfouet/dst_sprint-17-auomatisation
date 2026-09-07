@@ -18,13 +18,13 @@ RUNTIME VALIDATION       ✅
 STATIC GATE              ✅ GREEN
 E2E QUALIFICATION        ✅ GREEN
 IDEMPOTENCE              ✅ server1 changed=0
-PACKAGE / ARTIFACT       ✅ IMPLEMENTED / CI ⏳
-FINAL REPORT             ⏳
+PACKAGE / ARTIFACT       ✅ GREEN
+FINAL REPORT             ✅ CLOSED
 ```
 
-La qualification GREEN du projet source n'a pas été héritée : cette variante possède désormais ses propres preuves RC-10 et RC-11.
+La qualification GREEN du projet source n'a pas été héritée : cette variante dispose de ses propres preuves RC-10, RC-11 et RC-12.
 
-## Architecture cible
+## Architecture qualifiée
 
 ```text
 Nginx :80
@@ -43,13 +43,13 @@ Django
                            PostgreSQL
 ```
 
-Contrat réseau :
+Contrat réseau observé :
 
 ```text
-80    → exposé via Nginx
-8000  → localhost-only
-5432  → localhost-only
-6379  → localhost-only
+80    reachable=true
+8000  reachable=false
+5432  reachable=false
+6379  reachable=false
 ```
 
 ## Orchestration
@@ -62,16 +62,32 @@ common → postgresql → redis → django_app → celery → celery_beat → ng
 
 La topologie canonique est mono-host : le même `server1` appartient aux groupes `app` et `database`.
 
-## Qualification E2E — RC-10
+## Qualification E2E
 
-Le run canonique RC-10 a validé réellement :
+Le workflow canonique est :
 
 ```text
-PostgreSQL service + DB + role
-Redis service + PING authentifié
+Ansible Django PostgreSQL Redis Celery Mono-Host Qualification
+```
+
+Le run final qualifié est :
+
+```text
+run      : #4
+run ID   : 34099796947
+job ID   : 101671354038
+commit   : a7efa47d66a9b564bd36753f1dbdccbcb5cb7977
+conclusion: success
+```
+
+La qualification valide réellement :
+
+```text
+PostgreSQL + DB + role
+Redis + PING authentifié
 Gunicorn
 Celery Worker + control ping
-Celery Beat + PeriodicTask réellement déclenchée
+Django Celery Beat + PeriodicTask déclenchée
 Nginx + nginx -t
 GET /health/
 GET /health/database/
@@ -81,67 +97,53 @@ add(21,21) → 42
 database_probe() → SELECT 1
 ```
 
-Le contrat réseau observé reste :
+## Idempotence stricte
 
-```text
-80    reachable=true
-8000  reachable=false
-5432  reachable=false
-6379  reachable=false
-```
-
-## Idempotence stricte — RC-11
-
-Le run #3 du workflow mono-host a exécuté un second `site.yml` sur le même `server1` :
+Le second `site.yml` du run final produit :
 
 ```text
 server1 : ok=73 changed=0 unreachable=0 failed=0 skipped=3
 IDEMPOTENCE PASS: server1 changed=0
 ```
 
-La validation runtime complète et le contrat réseau ont ensuite été rejoués avec succès.
+La validation runtime complète et le contrat réseau sont ensuite rejoués avec succès.
 
-## Static gate — RC-09
+## Packaging final
 
-`ansible-project/tests/static_checks.sh` contrôle notamment :
-
-```text
-structure des 7 rôles
-scaffold Django/Celery/Beat
-dépendances Python
-syntaxe Bash / Python / YAML
-inventaire mono-host server1
-ordre d'orchestration
-stdlib .venv
-PostgreSQL SCRAM + localhost-only
-Redis localhost-only + protected-mode + auth
-Celery Worker depuis .venv
-Beat séparé avec DatabaseScheduler
-endpoints health Redis/Celery
-scénarios add/database_probe/Beat dans validate.yml
-absence de fichiers runtime sensibles versionnés
-ansible-playbook --syntax-check lorsque disponible
-```
-
-## Packaging — RC-12
-
-Le pipeline prépare désormais un livrable spécifique :
+Archive qualifiée :
 
 ```text
-django-postgresql-redis-celery-ansible-<timestamp>.zip
-*.zip.sha256
+django-postgresql-redis-celery-ansible-20260907-082219.zip
 ```
 
-avec :
+SHA-256 du ZIP projet :
 
 ```text
-sha256sum -c
-package_safety_check.sh
-exclusion hosts.yml / server1.yml / vault.yml / .vault_pass / clés privées / .env / .venv
-artifact GitHub Actions final
+558ef15ee8de57bf9d4ea09edcbdc586ff5a01c423c538de79119fb85df8ab8f
 ```
 
-La qualification RC-12 sera fermée uniquement après observation du prochain run GREEN et des métadonnées réelles du ZIP/artifact.
+Contrôles :
+
+```text
+sha256sum -c   ✅ OK
+PACKAGE SAFETY ✅ PASS
+```
+
+Artifact GitHub Actions :
+
+```text
+name       : ansible-django-postgresql-redis-celery-qualified-34099796947
+artifact ID: 10010158233
+size       : 114672 bytes
+expires    : 2026-09-21T08:22:19Z
+digest     : sha256:e70b25c19c0bbd5d0d69a5a20213398a6dd4b0ba157f3198b8e9febaf020f07c
+```
+
+Téléchargement :
+
+```text
+https://github.com/tawounfouet/dst_sprint-17-auomatisation/actions/runs/34099796947/artifacts/10010158233
+```
 
 ## Composants applicatifs
 
@@ -162,7 +164,7 @@ Tâches de démonstration :
 add(21, 21)                 → 42
 uppercase("datascientest") → "DATASCIENTEST"
 database_probe()            → PostgreSQL → SELECT 1
-periodic_heartbeat()        → heartbeat horodaté via Celery Beat
+periodic_heartbeat()        → heartbeat via Celery Beat
 ```
 
 Endpoints :
@@ -176,7 +178,11 @@ POST /api/tasks/database-probe/
 GET  /api/tasks/<task_id>/
 ```
 
-## Roadmap
+## Limite de la preuve
+
+Le projet est qualifié en CI sur un unique Ubuntu 24.04 avec systemd et transport `community.docker.docker`. Ce statut ne prouve pas encore un déploiement SSH sur VPS public, DNS, TLS/Let's Encrypt, UFW, backup/restore ou haute disponibilité.
+
+## Roadmap finale
 
 ```text
 RC-00   Fork contrôlé de la baseline       ✅
@@ -192,10 +198,16 @@ RC-08   runtime validation                 ✅
 RC-09   static gate                        ✅ GREEN
 RC-10   qualification E2E                  ✅ GREEN
 RC-11   idempotence stricte                ✅ GREEN
-RC-12   packaging + artifact               ⏭ QUALIFICATION CI
-RC-13   rapport final                      ⏳
+RC-12   packaging + artifact               ✅ GREEN
+RC-13   rapport final                      ✅ CLOSED
 ```
 
-## Documentation
+## Documentation finale
 
-Les jalons sont décrits dans `IMPLEMENTATION_PLAN.md`, `ARCHITECTURE.md` et les fichiers `RC_*.md` du dossier.
+Le rapport de clôture est :
+
+```text
+RC_13_FINAL_QUALIFICATION_REPORT.md
+```
+
+Les autres jalons restent documentés dans `IMPLEMENTATION_PLAN.md`, `ARCHITECTURE.md` et les fichiers `RC_*.md` du dossier.
