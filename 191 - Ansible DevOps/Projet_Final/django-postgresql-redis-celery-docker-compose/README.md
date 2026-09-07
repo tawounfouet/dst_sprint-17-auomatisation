@@ -23,11 +23,12 @@ MULTI-ENV DEV/STG/PROD          ✅ IMPLEMENTED
 SQLITE DEV-ONLY POLICY          ✅ IMPLEMENTED
 DJANGO REST FRAMEWORK           ✅ IMPLEMENTED
 12-FACTOR DOCKER IMAGE          ✅ IMPLEMENTED
-DOCKER COMPOSE                  ⏳
+BASE DOCKER COMPOSE STACK       ✅ IMPLEMENTED
+MULTI-ENV COMPOSE               ⏳
 ANSIBLE DOCKER ENGINE           ⏳
 ANSIBLE COMPOSE DEPLOY          ⏳
 SECRETS / ENV INJECTION         ⏳
-HEALTHCHECKS / PERSISTENCE      ⏳
+HEALTHCHECKS / PERSISTENCE      🟡 BASE IMPLEMENTED
 STATIC GATE                     ⏳
 COMPOSE E2E                     ⏳
 STRICT IDEMPOTENCE              ⏳
@@ -35,11 +36,9 @@ PACKAGE + SHA-256               ⏳
 FINAL REPORT                    ⏳
 ```
 
-`IMPLEMENTED` ne signifie pas encore `GREEN` : l'image n'est pas déclarée qualifiée tant qu'un `docker build` et les validations runtime/CI dédiées n'ont pas été observés.
+Aucun statut runtime GREEN n'est hérité ou revendiqué tant que les futurs gates Docker/Compose/CI n'ont pas été réellement exécutés.
 
 ## Configuration Django
-
-La configuration est structurée ainsi :
 
 ```text
 django-app/config/settings/
@@ -94,26 +93,9 @@ POST /api/tasks/database-probe/
 GET  /api/tasks/<task_id>/
 ```
 
-Composants principaux :
+Les serializers conservent les validations métier historiques, les soumissions retournent HTTP 202 et les échecs Celery n'exposent pas les exceptions backend.
 
-```text
-tasks_demo/serializers.py
-├── AddTaskSerializer
-├── UppercaseTaskSerializer
-├── TaskAcceptedSerializer
-└── TaskStatusSerializer
-
-tasks_demo/views.py
-└── @api_view + Response
-```
-
-Les contrats existants sont conservés : validations strictes, HTTP 202 pour les soumissions, `invalid_json`, erreurs métier stables et absence de fuite d'exception Celery.
-
-DEV active le `BrowsableAPIRenderer`; STG/PROD restent JSON-only.
-
-## Image Docker 12-Factor
-
-L'image applicative est définie dans :
+## Image applicative 12-Factor
 
 ```text
 django-app/
@@ -124,53 +106,28 @@ django-app/
     └── gunicorn.conf.py
 ```
 
-Contrats déjà implémentés :
+Le Dockerfile est multi-stage, installe les dépendances au build et exécute le runtime avec l'utilisateur non-root `app` UID/GID `10001`.
+
+Une seule image est destinée aux trois process types :
 
 ```text
-multi-stage build
-Python 3.12 slim runtime
-installation des dépendances au build
-aucun pip install au démarrage
-utilisateur non-root app:10001
-une seule image pour web/worker/beat
-Gunicorn → 0.0.0.0:8000 interne
-logs Gunicorn → stdout/stderr
-STOPSIGNAL SIGTERM
-entrypoint → exec "$@"
-APPLICATION_VERSION / APPLICATION_COMMIT baked comme metadata
-APPLICATION_ENV injecté uniquement au runtime
-aucun .env réel dans le contexte Docker
-aucune migration automatique au boot
+             APP IMAGE
+           /     |     \
+        web    worker   beat
+     Gunicorn  Celery  Celery Beat
 ```
 
-L'entrypoint exige aussi explicitement :
+Les logs sont dirigés vers stdout/stderr, `SIGTERM` est le signal d'arrêt et les migrations/`collectstatic` restent des admin one-shot processes.
+
+## Base Docker Compose
+
+Le fichier de base est :
 
 ```text
-APPLICATION_ENV=dev|stg|prod
-DJANGO_SETTINGS_MODULE=config.settings.<environment>
+docker/compose.yml
 ```
 
-Cela évite qu'un conteneur STG/PROD mal configuré démarre implicitement en DEV et puisse utiliser SQLite.
-
-## Architecture cible
-
-```text
-                    Nginx :80/:443
-                         │
-                         ▼
-                 web — Django/DRF
-                    Gunicorn :8000
-                     ┌────┴────┐
-                     ▼         ▼
-                    db       redis
-               PostgreSQL   Redis + auth
-                     ▲         ▲
-                     │         │
-                   worker     beat
-                   Celery   Celery Beat
-```
-
-Les services Compose cibles sont :
+Services :
 
 ```text
 nginx
@@ -181,9 +138,57 @@ worker
 beat
 ```
 
-`web`, `worker` et `beat` utiliseront la même image applicative et ne différeront que par leur commande/process type.
+Architecture :
+
+```text
+                    nginx :80
+                       │
+                       ▼
+                 web :8000
+              Django / DRF
+                 Gunicorn
+                 ┌────┴────┐
+                 ▼         ▼
+                db       redis
+           PostgreSQL   Redis + auth
+                 ▲         ▲
+                 │         │
+               worker     beat
+               Celery   Celery Beat
+```
+
+`web`, `worker` et `beat` utilisent la même référence `APP_IMAGE` et le même build `django-app/Dockerfile`.
+
+Persistance :
+
+```text
+postgres_data
+redis_data
+static_data
+```
+
+Healthchecks de base :
+
+```text
+db     → pg_isready
+redis  → PING authentifié
+web    → GET /health/
+worker → celery inspect ping
+beat   → process Celery Beat PID 1
+nginx  → GET /health/ via proxy
+```
+
+La preuve fonctionnelle forte de Beat restera une exécution périodique réellement observée en E2E.
+
+## Redis
+
+Redis utilise une ACL générée au démarrage depuis `REDIS_PASSWORD`, avec fichier temporaire protégé par `umask 077`, `protected-mode yes` et AOF activé.
+
+Le healthcheck utilise `REDISCLI_AUTH`; `redis-cli -a` n'est pas utilisé.
 
 ## Contrat réseau cible
+
+Service discovery :
 
 ```text
 nginx  → web:8000
@@ -198,11 +203,13 @@ beat   → redis:6379
 Côté hôte :
 
 ```text
-80/443 published=true
-8000   published=false
-5432   published=false
-6379   published=false
+80      published=true
+8000    published=false
+5432    published=false
+6379    published=false
 ```
+
+Seul `nginx` publie un port hôte dans le Compose de base.
 
 ## Ansible reste le plan de contrôle
 
@@ -226,8 +233,8 @@ DC-01  Docker/Compose architecture contracts                      ✅ DESIGN
 DC-02  Django configuration foundation                            ✅ IMPLEMENTED
 DC-03  Django REST Framework                                      ✅ IMPLEMENTED
 DC-04  12-Factor Docker image                                     ✅ IMPLEMENTED
-DC-05  Base Docker Compose stack                                  ⏭ NEXT
-DC-06  Multi-environment Compose                                  ⏳
+DC-05  Base Docker Compose stack                                  ✅ IMPLEMENTED
+DC-06  Multi-environment Compose                                  ⏭ NEXT
 DC-07  Ansible docker_engine                                      ⏳
 DC-08  Ansible compose_stack + inventories dev/stg/prod           ⏳
 DC-09  Secure runtime configuration                               ⏳
@@ -240,4 +247,4 @@ DC-15  Package + SHA-256 + artifact                               ⏳
 DC-16  Final qualification report + 12-Factor matrix              ⏳
 ```
 
-Le plan canonique complet est `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md`. Les jalons déjà implémentés sont documentés dans `DC_02_DJANGO_CONFIGURATION_FOUNDATION.md`, `DC_03_DJANGO_REST_FRAMEWORK.md` et `DC_04_12_FACTOR_DOCKER_IMAGE.md`.
+Le plan canonique complet est `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md`. Les jalons réalisés sont documentés dans les fichiers `DC_*.md` correspondants.
