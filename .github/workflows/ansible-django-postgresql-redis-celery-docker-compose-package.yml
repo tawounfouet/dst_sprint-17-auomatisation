@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 15
     env:
       PROJECT_DIR: 191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose
-      PACKAGE_STAGE: .dc15-artifact
+      PACKAGE_STAGE: dc15-artifact
 
     steps:
       - name: Checkout repository
