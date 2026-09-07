@@ -52,6 +52,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
+    user: redis
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     entrypoint:
