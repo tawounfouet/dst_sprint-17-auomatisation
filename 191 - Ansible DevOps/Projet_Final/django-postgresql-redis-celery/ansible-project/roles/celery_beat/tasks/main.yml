@@ -1,0 +1,92 @@
+---
+- name: Validate Celery Beat prerequisites
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ django_install_dir }}/manage.py"
+    - "{{ django_venv_dir }}/bin/celery"
+    - "{{ django_environment_file }}"
+  register: celery_beat_prerequisite_files
+
+- name: Assert Celery Beat prerequisites exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Celery Beat prerequisite missing: {{ item.item }}"
+    quiet: true
+  loop: "{{ celery_beat_prerequisite_files.results }}"
+
+- name: Wait for Redis before configuring Celery Beat
+  ansible.builtin.wait_for:
+    host: "{{ redis_host }}"
+    port: "{{ redis_port }}"
+    state: started
+    timeout: 30
+
+- name: Ensure demo periodic task exists in django-celery-beat
+  ansible.builtin.command:
+    argv:
+      - "{{ django_venv_dir }}/bin/python"
+      - manage.py
+      - ensure_demo_periodic_task
+      - --seconds
+      - "{{ celery_beat_demo_interval_seconds | string }}"
+    chdir: "{{ django_install_dir }}"
+  become_user: "{{ django_system_user }}"
+  environment:
+    DJANGO_SECRET_KEY: "{{ django_secret_key }}"
+    DJANGO_DEBUG: "{{ django_debug | ternary('true', 'false') }}"
+    DJANGO_ALLOWED_HOSTS: "{{ django_allowed_hosts }}"
+    POSTGRES_DB: "{{ postgresql_database }}"
+    POSTGRES_USER: "{{ postgresql_user }}"
+    POSTGRES_PASSWORD: "{{ postgresql_password }}"
+    POSTGRES_HOST: "{{ postgresql_host }}"
+    POSTGRES_PORT: "{{ postgresql_port | string }}"
+    CELERY_BROKER_URL: "{{ celery_broker_url }}"
+    CELERY_RESULT_BACKEND: "{{ celery_result_backend }}"
+    CELERY_RESULT_EXPIRES: "{{ celery_result_expires | string }}"
+  register: celery_beat_schedule_result
+  changed_when: >-
+    celery_beat_schedule_result.stdout.strip() in ['created', 'updated']
+  failed_when: >-
+    celery_beat_schedule_result.rc != 0
+    or celery_beat_schedule_result.stdout.strip() not in ['created', 'updated', 'unchanged']
+  no_log: true
+
+- name: Install Celery Beat systemd unit
+  ansible.builtin.template:
+    src: celery-beat.service.j2
+    dest: "/etc/systemd/system/{{ celery_beat_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  register: celery_beat_service_unit
+
+- name: Reload systemd when Celery Beat unit changes
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: celery_beat_service_unit.changed
+  changed_when: false
+
+- name: Enable and start or restart Celery Beat
+  ansible.builtin.systemd_service:
+    name: "{{ celery_beat_service_name }}"
+    enabled: true
+    state: >-
+      {{ 'restarted' if (
+        celery_beat_service_unit.changed
+        or (django_source_deploy_result is defined and django_source_deploy_result.changed)
+        or (django_dependency_install_result is defined and django_dependency_install_result.changed)
+        or (django_environment_render_result is defined and django_environment_render_result.changed)
+        or celery_beat_schedule_result.changed
+      ) else 'started' }}
+
+- name: Verify Celery Beat service is active
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ celery_beat_service_name }}"
+  register: celery_beat_active
+  changed_when: false
+  failed_when: celery_beat_active.stdout.strip() != 'active'
