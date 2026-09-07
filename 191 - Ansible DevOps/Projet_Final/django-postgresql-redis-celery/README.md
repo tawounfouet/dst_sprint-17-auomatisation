@@ -9,9 +9,9 @@ BASELINE COPIED          ✅
 ARCHITECTURE / CONTRACTS ✅
 PYTHON DEPENDENCIES      ✅
 DJANGO / CELERY CONFIG   ✅
+ASYNC TASK API           ✅ IMPLEMENTED
 REDIS IMPLEMENTATION     ⏳
 CELERY WORKER            ⏳
-ASYNC TASK API           ⏳
 E2E QUALIFICATION        ⏳
 IDEMPOTENCE              ⏳
 PACKAGE / ARTIFACT       ⏳
@@ -66,25 +66,15 @@ redis>=6,<7
 
 Le runtime conserve Python standard `venv` sous `.venv` ; aucune dépendance `virtualenv` n'est introduite.
 
-## Intégration Celery Django — RC-03
+## Intégration Celery Django
 
-L'application dispose désormais de :
+L'application dispose de :
 
 ```text
 django-app/config/celery.py
 ```
 
-et `config/__init__.py` expose l'application Celery.
-
-Django charge les paramètres depuis :
-
-```text
-CELERY_BROKER_URL
-CELERY_RESULT_BACKEND
-CELERY_RESULT_EXPIRES
-```
-
-avec sérialisation JSON et timezone alignée sur Django.
+et `config/__init__.py` expose l'application Celery. Django charge `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` et `CELERY_RESULT_EXPIRES`, avec sérialisation JSON et timezone alignée sur Django.
 
 Les URLs sont préparées par Ansible pour la topologie mono-host :
 
@@ -93,7 +83,30 @@ broker  → Redis 127.0.0.1:6379/0
 result  → Redis 127.0.0.1:6379/1
 ```
 
-Le secret Redis est référencé via `vault_redis_password`. Aucun worker Redis/Celery n'est encore qualifié à ce stade.
+Le secret Redis est référencé via `vault_redis_password`.
+
+## API de tâches — RC-04
+
+L'application `tasks_demo` fournit désormais les tâches :
+
+```text
+add(21, 21)                → 42
+uppercase("datascientest") → "DATASCIENTEST"
+database_probe()           → PostgreSQL → SELECT 1
+```
+
+Endpoints implémentés :
+
+```text
+POST /api/tasks/add/
+POST /api/tasks/uppercase/
+POST /api/tasks/database-probe/
+GET  /api/tasks/<task_id>/
+```
+
+Le endpoint de statut ne renvoie pas le détail brut des exceptions Celery en cas d'échec. Les endpoints POST sont volontairement `csrf_exempt` pour ce laboratoire JSON sans session ; cette décision n'est pas un modèle d'API publique de production et devra être remplacée par une authentification/API policy adaptée avant exposition réelle.
+
+Les tests unitaires mockent actuellement le broker et le backend. La preuve réelle Django → Redis → Celery → résultat sera apportée par la qualification E2E après RC-05/RC-06.
 
 ## Rôles cibles
 
@@ -112,16 +125,6 @@ Ordre prévu :
 common → postgresql → redis → django_app → celery → nginx
 ```
 
-## Tâches de démonstration cibles
-
-```text
-add(21, 21)                → 42
-uppercase("datascientest") → "DATASCIENTEST"
-database_probe()           → PostgreSQL → SELECT 1
-```
-
-La future CI devra exécuter réellement ces tâches via Redis et un worker Celery.
-
 ## Documentation
 
 Le plan détaillé est défini dans [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).
@@ -135,6 +138,7 @@ RC_00_BASELINE_COPY.md
 RC_01_ARCHITECTURE_AND_CONTRACTS.md
 RC_02_PYTHON_DEPENDENCIES.md
 RC_03_DJANGO_CELERY_INTEGRATION.md
+RC_04_ASYNC_TASK_API.md
 ```
 
 Étapes réalisées :
@@ -144,6 +148,7 @@ RC-00  Fork contrôlé de la baseline       ✅
 RC-01  Architecture et contrats           ✅
 RC-02  Dépendances Python                 ✅
 RC-03  Intégration Celery dans Django     ✅
+RC-04  Tâches + API asynchrone            ✅
 ```
 
-Le prochain jalon est **RC-04 — Tâches de démonstration + API asynchrone**.
+Le prochain jalon est **RC-05 — rôle Ansible Redis**.
