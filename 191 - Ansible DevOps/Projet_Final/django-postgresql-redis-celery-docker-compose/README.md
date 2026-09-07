@@ -1,213 +1,144 @@
-# Projet Ansible — Django + PostgreSQL + Redis + Celery + Beat
+# Projet Ansible — Django/DRF + PostgreSQL + Redis + Celery + Docker Compose
 
-Variante dérivée du projet `django-postgresql/` afin d'ajouter Redis, un worker Celery et `django-celery-beat` sur une topologie mono-serveur Ubuntu 24.04.
+Nouvelle variante dérivée du projet qualifié `django-postgresql-redis-celery/` afin de migrer l'exécution applicative vers **Docker Engine + Docker Compose**, tout en conservant **Ansible comme plan de contrôle et d'automatisation du serveur**.
+
+## Source de la copie
+
+```text
+source folder : 191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery/
+source branch : feat/ansible-django-postgresql-redis-celery
+source HEAD   : 0b33d1ea230b47492720127b2dcf837899da851d
+```
+
+Les preuves RC-10 à RC-13 copiées depuis la baseline sont **historiques uniquement**. Elles qualifient la variante systemd/native précédente, pas cette nouvelle variante Docker Compose.
 
 ## Statut
 
 ```text
-BASELINE COPIED          ✅
-ARCHITECTURE / CONTRACTS ✅
-PYTHON DEPENDENCIES      ✅
-DJANGO / CELERY CONFIG   ✅
-ASYNC TASK API           ✅
-REDIS ROLE               ✅
-CELERY WORKER            ✅
-DJANGO CELERY BEAT       ✅
-GLOBAL ORCHESTRATION     ✅
-RUNTIME VALIDATION       ✅
-STATIC GATE              ✅ GREEN
-E2E QUALIFICATION        ✅ GREEN
-IDEMPOTENCE              ✅ server1 changed=0
-PACKAGE / ARTIFACT       ✅ GREEN
-FINAL REPORT             ✅ CLOSED
+BASELINE COPIED              ✅
+TARGET ARCHITECTURE          ✅ DESIGN
+DOCKERFILE                   ⏳
+DOCKER COMPOSE               ⏳
+DJANGO REST FRAMEWORK        ⏳
+ANSIBLE DOCKER ENGINE        ⏳
+ANSIBLE COMPOSE DEPLOY       ⏳
+SECRETS / ENV INJECTION      ⏳
+HEALTHCHECKS / PERSISTENCE   ⏳
+STATIC GATE                  ⏳
+COMPOSE E2E                  ⏳
+STRICT IDEMPOTENCE           ⏳
+PACKAGE + SHA-256            ⏳
+FINAL REPORT                 ⏳
 ```
 
-La qualification GREEN du projet source n'a pas été héritée : cette variante dispose de ses propres preuves RC-10, RC-11 et RC-12.
-
-## Architecture qualifiée
+## Architecture cible
 
 ```text
-Nginx :80
-   ↓
-Gunicorn 127.0.0.1:8000
-   ↓
-Django
-   ├── PostgreSQL 127.0.0.1:5432
-   └── Redis      127.0.0.1:6379
-          ▲              ▲
-          │              │
-   Celery Worker   Celery Beat
-                         │
-                         └── DatabaseScheduler
-                              ↓
-                           PostgreSQL
+Ansible control
+      │
+      │ SSH / CI transport
+      ▼
+┌─────────────────────────────────────────────────────────────┐
+│ server1 — Ubuntu 24.04                                    │
+│                                                            │
+│ Docker Engine + Docker Compose                             │
+│                                                            │
+│  ┌─────────┐        ┌──────────────────────────────┐       │
+│  │ nginx   │───────►│ web                          │       │
+│  │ :80     │        │ Django/DRF + Gunicorn :8000 │       │
+│  └─────────┘        └──────────────┬───────────────┘       │
+│       ▲                            │                       │
+│       │                            ├────────► db            │
+│    public                          │          PostgreSQL     │
+│                                    │          :5432 internal │
+│                                    │                       │
+│                                    └────────► redis         │
+│                                               :6379 internal │
+│                                                  ▲          │
+│                                      ┌───────────┴────────┐ │
+│                                      │                    │ │
+│                                   worker                beat│
+│                                Celery Worker       Celery Beat│
+│                                      │                    │ │
+│                                      └── same app image ──┘ │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-Contrat réseau observé :
+## Services Compose cibles
 
 ```text
-80    reachable=true
-8000  reachable=false
-5432  reachable=false
-6379  reachable=false
+nginx   reverse proxy, seul service publié sur l'hôte
+web     Django/DRF + Gunicorn
+ db     PostgreSQL
+redis   broker + result backend avec authentification
+worker  Celery Worker, même image applicative que web
+beat    Celery Beat + django-celery-beat, même image que web
 ```
 
-## Orchestration
+## Contrat réseau
 
-Le `site.yml` orchestre les sept rôles :
+Le passage en conteneurs change le sens de « localhost-only ».
+
+Dans la variante native, Gunicorn, PostgreSQL et Redis écoutaient sur `127.0.0.1` du serveur. Dans Compose, les services doivent communiquer via le réseau Docker et les noms DNS de services :
 
 ```text
-common → postgresql → redis → django_app → celery → celery_beat → nginx
+web    → db:5432
+web    → redis:6379
+worker → db:5432
+worker → redis:6379
+beat   → db:5432
+beat   → redis:6379
+nginx  → web:8000
 ```
 
-La topologie canonique est mono-host : le même `server1` appartient aux groupes `app` et `database`.
+Gunicorn écoutera donc sur `0.0.0.0:8000` **dans le conteneur web**, mais le port `8000` ne sera pas publié sur l'hôte.
 
-## Qualification E2E
-
-Le workflow canonique est :
+Contrat côté hôte :
 
 ```text
-Ansible Django PostgreSQL Redis Celery Mono-Host Qualification
+80    published=true
+8000  published=false
+5432  published=false
+6379  published=false
 ```
 
-Le run final qualifié est :
+## Ansible reste le plan de contrôle
+
+La cible n'est pas de remplacer Ansible par Compose. Ansible doit préparer et converger l'hôte :
 
 ```text
-run      : #4
-run ID   : 34099796947
-job ID   : 101671354038
-commit   : a7efa47d66a9b564bd36753f1dbdccbcb5cb7977
-conclusion: success
+common
+  ↓
+docker_engine
+  ↓
+compose_stack
 ```
 
-La qualification valide réellement :
+Le déploiement final devra utiliser `community.docker.docker_compose_v2` plutôt que lancer en parallèle les anciens rôles systemd `postgresql`, `redis`, `django_app`, `celery`, `celery_beat` et `nginx`.
+
+Ces anciens rôles sont conservés dans la copie comme référence de migration tant que le portage Compose n'est pas terminé.
+
+## Django REST Framework
+
+La baseline expose déjà des endpoints JSON Django. Cette variante ajoutera explicitement **Django REST Framework** afin que l'API asynchrone soit portée par DRF et non uniquement par des vues JSON manuelles.
+
+## Roadmap Docker Compose
 
 ```text
-PostgreSQL + DB + role
-Redis + PING authentifié
-Gunicorn
-Celery Worker + control ping
-Django Celery Beat + PeriodicTask déclenchée
-Nginx + nginx -t
-GET /health/
-GET /health/database/
-GET /health/redis/
-GET /health/celery/
-add(21,21) → 42
-database_probe() → SELECT 1
+DC-00  Copie contrôlée de la baseline                 ✅
+DC-01  Architecture Docker/Compose et contrats         ✅ DESIGN
+DC-02  Dockerfile + .dockerignore + image non-root     ⏳
+DC-03  Compose web/db/redis/worker/beat/nginx          ⏳
+DC-04  Django REST Framework                           ⏳
+DC-05  Rôle Ansible docker_engine                      ⏳
+DC-06  Rôle Ansible compose_stack                      ⏳
+DC-07  Vault → environnement/secrets Compose           ⏳
+DC-08  Healthchecks + volumes + isolation réseau       ⏳
+DC-09  Static gate                                     ⏳
+DC-10  Première qualification E2E Compose              ⏳
+DC-11  Idempotence stricte Ansible + stabilité Compose ⏳
+DC-12  ZIP + SHA-256 + artifact GitHub Actions         ⏳
+DC-13  Rapport final                                   ⏳
 ```
 
-## Idempotence stricte
-
-Le second `site.yml` du run final produit :
-
-```text
-server1 : ok=73 changed=0 unreachable=0 failed=0 skipped=3
-IDEMPOTENCE PASS: server1 changed=0
-```
-
-La validation runtime complète et le contrat réseau sont ensuite rejoués avec succès.
-
-## Packaging final
-
-Archive qualifiée :
-
-```text
-django-postgresql-redis-celery-ansible-20260907-082219.zip
-```
-
-SHA-256 du ZIP projet :
-
-```text
-558ef15ee8de57bf9d4ea09edcbdc586ff5a01c423c538de79119fb85df8ab8f
-```
-
-Contrôles :
-
-```text
-sha256sum -c   ✅ OK
-PACKAGE SAFETY ✅ PASS
-```
-
-Artifact GitHub Actions :
-
-```text
-name       : ansible-django-postgresql-redis-celery-qualified-34099796947
-artifact ID: 10010158233
-size       : 114672 bytes
-expires    : 2026-09-21T08:22:19Z
-digest     : sha256:e70b25c19c0bbd5d0d69a5a20213398a6dd4b0ba157f3198b8e9febaf020f07c
-```
-
-Téléchargement :
-
-```text
-https://github.com/tawounfouet/dst_sprint-17-auomatisation/actions/runs/34099796947/artifacts/10010158233
-```
-
-## Composants applicatifs
-
-Dépendances Python :
-
-```text
-Django>=5.2,<5.3
-gunicorn>=23,<24
-psycopg[binary]>=3.2,<4
-celery>=5.5,<6
-redis>=6,<7
-django-celery-beat>=2.9,<3
-```
-
-Tâches de démonstration :
-
-```text
-add(21, 21)                 → 42
-uppercase("datascientest") → "DATASCIENTEST"
-database_probe()            → PostgreSQL → SELECT 1
-periodic_heartbeat()        → heartbeat via Celery Beat
-```
-
-Endpoints :
-
-```text
-GET  /health/redis/
-GET  /health/celery/
-POST /api/tasks/add/
-POST /api/tasks/uppercase/
-POST /api/tasks/database-probe/
-GET  /api/tasks/<task_id>/
-```
-
-## Limite de la preuve
-
-Le projet est qualifié en CI sur un unique Ubuntu 24.04 avec systemd et transport `community.docker.docker`. Ce statut ne prouve pas encore un déploiement SSH sur VPS public, DNS, TLS/Let's Encrypt, UFW, backup/restore ou haute disponibilité.
-
-## Roadmap finale
-
-```text
-RC-00   Fork contrôlé de la baseline       ✅
-RC-01   Architecture et contrats           ✅
-RC-02   Dépendances Python                 ✅
-RC-03   Intégration Celery dans Django     ✅
-RC-04   Tâches + API asynchrone            ✅
-RC-05   rôle Redis                         ✅
-RC-06   rôle Celery Worker                 ✅
-RC-06B  Django Celery Beat                 ✅
-RC-07   orchestration globale              ✅
-RC-08   runtime validation                 ✅
-RC-09   static gate                        ✅ GREEN
-RC-10   qualification E2E                  ✅ GREEN
-RC-11   idempotence stricte                ✅ GREEN
-RC-12   packaging + artifact               ✅ GREEN
-RC-13   rapport final                      ✅ CLOSED
-```
-
-## Documentation finale
-
-Le rapport de clôture est :
-
-```text
-RC_13_FINAL_QUALIFICATION_REPORT.md
-```
-
-Les autres jalons restent documentés dans `IMPLEMENTATION_PLAN.md`, `ARCHITECTURE.md` et les fichiers `RC_*.md` du dossier.
+Le plan détaillé est dans `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md` et le fork contrôlé dans `DC_00_BASELINE_COPY.md`.
