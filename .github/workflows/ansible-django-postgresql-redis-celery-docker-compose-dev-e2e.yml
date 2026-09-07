@@ -1,0 +1,51 @@
+name: Ansible Django PostgreSQL Redis Celery Compose DEV Full E2E
+
+on:
+  push:
+    branches:
+      - feat/ansible-django-postgresql-redis-celery-docker-compose
+    paths:
+      - "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/**"
+      - ".github/workflows/ansible-django-postgresql-redis-celery-docker-compose-dev-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dc12-dev-full-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Show runtime tool versions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python --version
+          docker --version
+          docker compose version
+
+      - name: Prepare isolated host port contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo systemctl stop postgresql.service 2>/dev/null || true
+          sudo systemctl stop redis-server.service 2>/dev/null || true
+          sudo systemctl stop nginx.service 2>/dev/null || true
+
+      - name: Run DC-12 DEV Full E2E
+        working-directory: "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/ansible-project"
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chmod +x tests/e2e/run_dev_full_e2e.sh tests/e2e/validate_dev_full_e2e.py
+          ./tests/e2e/run_dev_full_e2e.sh
