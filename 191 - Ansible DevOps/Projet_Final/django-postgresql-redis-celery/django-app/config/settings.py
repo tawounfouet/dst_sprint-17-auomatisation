@@ -86,3 +86,6 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_RESULT_EXPIRES = int(os.getenv("CELERY_RESULT_EXPIRES", "3600"))
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_BEAT_MAX_LOOP_INTERVAL = int(os.getenv("CELERY_BEAT_MAX_LOOP_INTERVAL", "5"))
+# Persist django-celery-beat scheduler state after each published task so the
+# E2E qualification can observe last_run_at/total_run_count deterministically.
+CELERY_BEAT_SYNC_EVERY = int(os.getenv("CELERY_BEAT_SYNC_EVERY", "1"))
