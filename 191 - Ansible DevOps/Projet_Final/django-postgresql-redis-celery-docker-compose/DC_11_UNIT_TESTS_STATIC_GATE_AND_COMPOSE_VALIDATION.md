@@ -3,22 +3,46 @@
 ## Statut
 
 ```text
-IMPLEMENTATION                 ✅
-DJANGO UNIT TEST GATE          ✅ IMPLEMENTED
-DRF API TEST GATE              ✅ IMPLEMENTED
-SECRET HYGIENE GATE            ✅ IMPLEMENTED
-ANSIBLE SYNTAX GATE            ✅ IMPLEMENTED
-COMPOSE CONFIG DEV             ✅ IMPLEMENTED
-COMPOSE CONFIG STG             ✅ IMPLEMENTED
-COMPOSE CONFIG PROD            ✅ IMPLEMENTED
-DOCKERFILE / HARDENING CHECKS   ✅ IMPLEMENTED
-CI GREEN                       ⏳
-RUNTIME E2E                    ⏳
+IMPLEMENTATION                  ✅
+DJANGO UNIT TEST GATE           ✅ GREEN
+DRF API TEST GATE               ✅ GREEN
+SECRET HYGIENE GATE             ✅ GREEN
+ANSIBLE SYNTAX GATE             ✅ GREEN
+COMPOSE CONFIG DEV              ✅ GREEN
+COMPOSE CONFIG STG              ✅ GREEN
+COMPOSE CONFIG PROD             ✅ GREEN
+DOCKERFILE / HARDENING CHECKS   ✅ GREEN
+CI GREEN                        ✅
+RUNTIME E2E                     ✅ MOVED TO DC-12 / GREEN DEV FULL
 ```
 
 DC-11 transforme les contrats architecturaux et de sécurité des jalons précédents en une barrière statique exécutable.
 
-Aucun statut GREEN n'est revendiqué tant que le workflow GitHub Actions dédié n'a pas été observé avec succès.
+## Qualification canonique
+
+```text
+Workflow : Ansible Django PostgreSQL Redis Celery Compose Static Gate
+Run      : #7
+Run ID   : 34133167102
+Job ID   : 101777908524
+HEAD     : 4c1a7f2a567739724794653d356ac17cc77312fb
+Result   : SUCCESS
+
+Runner   : Ubuntu 24.04.4
+Python   : 3.12.14
+Ansible  : ansible-core 2.20.8
+Docker   : 28.0.4
+Compose  : v2.38.2
+```
+
+Le gate a ensuite été rejoué avec succès sur le HEAD qualifié DC-12 :
+
+```text
+Run ID : 34135447373
+Job ID : 101785201716
+HEAD   : f479e84b9152e3d9d1fab385b5256233a551f123
+Result : SUCCESS
+```
 
 ## Gate canonique
 
@@ -28,13 +52,13 @@ Depuis `ansible-project/` :
 ./tests/static_checks.sh
 ```
 
-Le script échoue au premier invariant non respecté et termine par :
+Le script termine par :
 
 ```text
 DC11_STATIC_GATE_PASS
 ```
 
-uniquement si l'ensemble des contrôles obligatoires disponibles passe.
+uniquement lorsque tous les contrôles obligatoires passent.
 
 ## Django / DRF
 
@@ -46,22 +70,17 @@ DJANGO_SETTINGS_MODULE=config.settings.dev
 DATABASE_URL absente
 ```
 
-Cela qualifie le contrat DEV Lite / SQLite sans démarrer PostgreSQL.
-
-Les suites existantes couvrent :
+Le run canonique a exécuté 39 tests et obtenu :
 
 ```text
-health endpoints
-Redis health mock
-Celery health mock
-add / uppercase / database_probe
-DRF validation
-status SUCCESS / FAILURE
-absence de fuite d'exception
-Periodic heartbeat task
+Ran 39 tests
+OK
+System check identified no issues (0 silenced)
 ```
 
-DC-11 ajoute `tests/test_settings_runtime_policy.py`, qui isole les imports de settings dans des sous-processus et verrouille notamment :
+Les suites couvrent notamment les health endpoints, les mocks Redis/Celery, les tâches `add`, `uppercase`, `database_probe`, la validation DRF, les statuts `SUCCESS`/`FAILURE`, l'absence de fuite d'exception et le heartbeat périodique.
+
+`tests/test_settings_runtime_policy.py` verrouille :
 
 ```text
 DEV sans DATABASE_URL                → SQLite autorisé
@@ -74,8 +93,6 @@ PROD Celery non-Redis                → FAIL
 STG PostgreSQL valide + DEBUG=false  → OK
 ```
 
-Ces tests ne nécessitent aucune connexion réelle à PostgreSQL ou Redis.
-
 ## Static source checks
 
 Le gate contrôle notamment :
@@ -83,7 +100,7 @@ Le gate contrôle notamment :
 ```text
 django-environ + DRF
 settings/base.py + database.py + dev/stg/prod
-pas de fallback PostgreSQL-exception → SQLite
+pas de fallback silencieux PostgreSQL → SQLite
 Dockerfile multi-stage
 USER app
 STOPSIGNAL SIGTERM
@@ -97,8 +114,10 @@ DatabaseScheduler
 rôles Ansible actifs exacts
 anciens rôles natifs absents de site.yml
 DOCKER-USER + conntrack --ctorigdstport
-daemon live-restore + firewall-backend
+daemon live-restore + iptables/ip6tables
 ```
+
+Le contrôle anti-fallback de `database.py` utilise l'AST Python plutôt qu'une recherche textuelle fragile.
 
 ## Secret hygiene
 
@@ -108,9 +127,7 @@ DC-11 exécute :
 python3 scripts/secret_hygiene.py repo
 ```
 
-avant les autres opérations susceptibles de produire des fichiers temporaires.
-
-Les canaris utilisés ensuite sont explicitement marqués `STATIC_CHECK_ONLY` et les Vaults temporaires sont supprimés par `trap`.
+Les canaris sont explicitement marqués `STATIC_CHECK_ONLY` et les Vaults temporaires sont supprimés par `trap`.
 
 ## Ansible syntax
 
@@ -124,13 +141,11 @@ docker_engine.yml
 runtime_hardening.yml
 ```
 
-`community.docker` est obligatoire.
-
-Le syntax-check ne déploie rien et ne constitue pas une preuve de convergence runtime.
+Le run canonique a validé les cinq syntax-checks. `community.docker` est obligatoire.
 
 ## Compose config multi-environnement
 
-Pour chaque environnement, le gate produit un fichier canari temporaire puis exécute :
+Pour DEV, STG et PROD, le gate exécute :
 
 ```bash
 docker compose \
@@ -140,93 +155,65 @@ docker compose \
   config --quiet
 ```
 
-puis :
+puis valide le Compose rendu avec :
 
 ```bash
-docker compose ... config > rendered.yml
 python3 tests/validate_compose_config.py <env> rendered.yml
 ```
 
-Le validateur du Compose rendu vérifie entre autres :
+Preuves observées :
 
 ```text
-services = nginx, web, db, redis, worker, beat
-web/worker/beat même image
-DEV build autorisé
-STG/PROD aucun build
-STG/PROD APP_IMAGE @sha256
-Nginx seul port publié
-DEV → 127.0.0.1:8080
-STG/PROD → :80
-8000/5432/6379 non publiés
-backend internal
-matrice réseau attendue
-read_only pour app/Redis/Nginx
-no-new-privileges
-cap_drop ALL
-resource limits
-PID limits
-json-file rotation
-healthchecks
-aucun container privileged
-aucun host network / host PID
-aucun docker.sock
-pas de bind mount /app en STG/PROD
-worker sans -B
-Beat avec DatabaseScheduler
+COMPOSE_CONFIG_PASS: dev
+COMPOSE_CONFIG_PASS: stg
+COMPOSE_CONFIG_PASS: prod
+STATIC_GATE_PASS: Compose config DEV/STG/PROD
 ```
+
+Le validateur impose notamment les six services, l'image commune `web/worker/beat`, l'absence de build STG/PROD, le digest d'image STG/PROD, la segmentation réseau, les ports, `read_only`, capabilities, resource/PID limits, logging, healthchecks, l'absence de `privileged`, host network/PID, docker.sock et bind mount `/app` en STG/PROD.
 
 ## Docker daemon validation
 
-Lorsque `dockerd` est disponible, le gate exécute également :
+Lorsque `dockerd` est disponible :
 
 ```bash
 dockerd --validate --config-file <temporary-daemon.json>
 ```
 
-sur une configuration canari équivalente au contrat DC-10.
-
-## Workflow GitHub Actions
-
-Le workflow ajouté est :
+Le premier contrat avec `firewall-backend` a révélé une incompatibilité réelle avec Docker Engine 28.0.4. Il a été corrigé vers le contrat portable :
 
 ```text
-.github/workflows/ansible-django-postgresql-redis-celery-docker-compose-static.yml
+live-restore=true
+iptables=true
+ip6tables=true
+json-file + rotation
 ```
 
-Il installe :
+Le run canonique obtient :
 
 ```text
-Python 3.12
-requirements Django
-ansible-core
-PyYAML
-collections Ansible
+configuration OK
+STATIC_GATE_PASS: dockerd --validate
 ```
 
-puis lance uniquement le gate statique. Il ne démarre pas la stack applicative.
+La politique `DOCKER-USER` reste gérée séparément par le rôle et son template firewall.
 
-## Ce que DC-11 ne prouve pas encore
+## Frontière de DC-11
+
+DC-11 prouve les contrats statiques, les tests Django/DRF, Ansible syntax-check, Compose rendering et Docker daemon config. Il ne constituait pas à lui seul une preuve de services réellement démarrés.
+
+Cette frontière a été franchie par DC-12, désormais GREEN en DEV Full.
+
+## Verdict
 
 ```text
-build réel de l'image applicative
-six containers healthy
-PostgreSQL/Redis réels
-HTTP réel via Nginx
-round-trip Celery
-Beat périodique réellement exécuté
-network reachability runtime
-DOCKER-USER sur une cible de déploiement
-reboot/recovery
-idempotence Ansible/Compose
+DC11_STATIC_GATE_PASS
 ```
 
-Ces preuves commencent avec DC-12.
+**DC-11 est GREEN.**
 
-## Prochain jalon
+## Prochain jalon actuel
 
 ```text
-DC-12 — DEV Full E2E Qualification
+DC-13 — STG-like E2E + anti-SQLite Runtime Qualification
 ```
-
-Il devra construire l'image une fois, converger les six services en DEV Full, valider les healthchecks, effectuer les round-trips fonctionnels Celery/Beat et prouver le contrat réseau depuis l'hôte.
