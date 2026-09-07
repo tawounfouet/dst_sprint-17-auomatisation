@@ -94,14 +94,6 @@
     directory_mode: '0755'
     mode: preserve
 
-- name: Ensure Redis runtime entrypoint is executable
-  ansible.builtin.file:
-    path: "{{ compose_stack_project_directory }}/redis/entrypoint.sh"
-    owner: root
-    group: root
-    mode: '0755'
-    state: file
-
 - name: Deploy application build context for DEV Full
   ansible.builtin.copy:
     src: "{{ compose_stack_application_source_directory }}/"
