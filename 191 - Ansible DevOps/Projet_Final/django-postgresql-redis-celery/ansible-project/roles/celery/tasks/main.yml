@@ -1,0 +1,61 @@
+---
+- name: Validate Celery worker prerequisites
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ django_install_dir }}/manage.py"
+    - "{{ django_venv_dir }}/bin/celery"
+    - "{{ django_environment_file }}"
+  register: celery_prerequisite_files
+
+- name: Assert Celery worker prerequisites exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Celery prerequisite missing: {{ item.item }}"
+    quiet: true
+  loop: "{{ celery_prerequisite_files.results }}"
+
+- name: Wait for Redis broker before starting Celery worker
+  ansible.builtin.wait_for:
+    host: "{{ redis_host }}"
+    port: "{{ redis_port }}"
+    state: started
+    timeout: 30
+
+- name: Install Celery worker systemd unit
+  ansible.builtin.template:
+    src: celery-worker.service.j2
+    dest: "/etc/systemd/system/{{ celery_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  register: celery_service_unit
+
+- name: Reload systemd when Celery worker unit changes
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: celery_service_unit.changed
+  changed_when: false
+
+- name: Enable and start or restart Celery worker
+  ansible.builtin.systemd_service:
+    name: "{{ celery_service_name }}"
+    enabled: true
+    state: >-
+      {{ 'restarted' if (
+        celery_service_unit.changed
+        or (django_source_deploy_result is defined and django_source_deploy_result.changed)
+        or (django_dependency_install_result is defined and django_dependency_install_result.changed)
+        or (django_environment_render_result is defined and django_environment_render_result.changed)
+      ) else 'started' }}
+
+- name: Verify Celery worker service is active
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ celery_service_name }}"
+  register: celery_worker_active
+  changed_when: false
+  failed_when: celery_worker_active.stdout.strip() != 'active'
