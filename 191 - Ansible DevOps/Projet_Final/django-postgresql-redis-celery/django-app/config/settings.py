@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "health.apps.HealthConfig",
+    "tasks_demo.apps.TasksDemoConfig",
 ]
 
 MIDDLEWARE = [
