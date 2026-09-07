@@ -2,6 +2,12 @@
 *.pem
 *.key
 *.retry
+inventories/dev/hosts.yml
+inventories/dev/host_vars/server1.yml
+inventories/dev/group_vars/vault.yml
+inventories/stg/hosts.yml
+inventories/stg/host_vars/server1.yml
+inventories/stg/group_vars/vault.yml
 inventories/prod/hosts.yml
 inventories/prod/host_vars/server1.yml
 inventories/prod/group_vars/vault.yml

@@ -1,8 +1,8 @@
 ---
-deployment_environment: prod
-app_image: registry.example.com/datascientest-django@sha256:CHANGE_ME_WITH_64_HEX_DIGEST
-application_version: CHANGE_ME_VERSION
-application_commit: CHANGE_ME_COMMIT
+deployment_environment: dev
+app_image: datascientest-django:dev
+application_version: 0.0.0-dev
+application_commit: local
 
 postgresql_database: django_app
 postgresql_user: django_app
@@ -11,14 +11,14 @@ redis_result_database: 1
 
 compose_stack_runtime_environment:
   APP_IMAGE: "{{ app_image }}"
-  APPLICATION_ENV: prod
+  APPLICATION_ENV: dev
   APPLICATION_VERSION: "{{ application_version }}"
   APPLICATION_COMMIT: "{{ application_commit }}"
-  DJANGO_SETTINGS_MODULE: config.settings.prod
+  DJANGO_SETTINGS_MODULE: config.settings.dev
   DJANGO_SECRET_KEY: "{{ vault_django_secret_key }}"
-  DJANGO_DEBUG: "false"
-  DJANGO_ALLOWED_HOSTS: example.com,web,nginx
-  DJANGO_CSRF_TRUSTED_ORIGINS: https://example.com
+  DJANGO_DEBUG: "true"
+  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,web,nginx
+  DJANGO_CSRF_TRUSTED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
   DATABASE_URL: "postgresql://{{ postgresql_user | urlencode }}:{{ vault_postgresql_password | urlencode }}@db:5432/{{ postgresql_database | urlencode }}"
   CELERY_BROKER_URL: "redis://:{{ vault_redis_password | urlencode }}@redis:6379/{{ redis_broker_database }}"
   CELERY_RESULT_BACKEND: "redis://:{{ vault_redis_password | urlencode }}@redis:6379/{{ redis_result_database }}"
@@ -27,6 +27,5 @@ compose_stack_runtime_environment:
   POSTGRES_USER: "{{ postgresql_user }}"
   POSTGRES_PASSWORD: "{{ vault_postgresql_password }}"
   REDIS_PASSWORD: "{{ vault_redis_password }}"
-  NGINX_HTTP_BIND_ADDRESS: 0.0.0.0
-  NGINX_HTTP_PORT: "80"
-  DJANGO_LOG_LEVEL: INFO
+  NGINX_HTTP_PORT: "8080"
+  DJANGO_LOG_LEVEL: DEBUG

@@ -1,0 +1,32 @@
+---
+compose_stack_project_name: datascientest
+compose_stack_release_root: /opt/datascientest-compose
+compose_stack_project_directory: "{{ compose_stack_release_root }}/docker"
+compose_stack_application_directory: "{{ compose_stack_release_root }}/django-app"
+compose_stack_source_directory: "{{ playbook_dir }}/../../docker"
+compose_stack_application_source_directory: "{{ playbook_dir }}/../../django-app"
+
+compose_stack_environment: "{{ deployment_environment | default('dev') }}"
+compose_stack_allowed_environments:
+  - dev
+  - stg
+  - prod
+compose_stack_digest_required_environments:
+  - stg
+  - prod
+
+compose_stack_base_file: compose.yml
+compose_stack_overlay_file: "compose.{{ compose_stack_environment }}.yml"
+compose_stack_files:
+  - "{{ compose_stack_base_file }}"
+  - "{{ compose_stack_overlay_file }}"
+compose_stack_runtime_env_file: .env.runtime
+
+compose_stack_app_image: "{{ app_image | default('') }}"
+compose_stack_runtime_environment: {}
+compose_stack_copy_application_source_in_dev: true
+compose_stack_pull_policy: "{{ 'policy' if compose_stack_environment == 'dev' else 'always' }}"
+compose_stack_build_policy: "{{ 'always' if compose_stack_environment == 'dev' else 'never' }}"
+compose_stack_remove_orphans: true
+compose_stack_wait: true
+compose_stack_wait_timeout: 180

@@ -1,75 +1,76 @@
 # Playbooks — Variante Docker Compose
 
-## État de transition
+## `site.yml` — orchestration active DC-08
 
-La variante a été copiée depuis la baseline native `django-postgresql-redis-celery/`. Les anciens `site.yml` et `validate.yml` décrivent encore la qualification systemd historique et restent présents comme **référence de migration** jusqu'à DC-08/DC-10.
-
-Ils ne doivent pas être interprétés comme le point d'entrée final de la variante Docker Compose.
-
-## `docker_engine.yml` — DC-07
-
-Le playbook actif du jalon DC-07 est :
+Le point d'entrée actif de la variante Docker Compose est désormais :
 
 ```text
-playbooks/docker_engine.yml
-```
-
-Il cible le groupe `app`, élève les privilèges et applique uniquement :
-
-```text
-docker_engine
-```
-
-Il ne déploie aucun composant applicatif.
-
-Exécution :
-
-```bash
-ansible-playbook \
-  -i inventories/prod/hosts.yml \
-  playbooks/docker_engine.yml
-```
-
-Syntax check :
-
-```bash
-ansible-playbook \
-  -i inventories/prod/hosts.yml \
-  playbooks/docker_engine.yml \
-  --syntax-check
-```
-
-## Validations DC-07
-
-Le rôle `docker_engine` vérifie lui-même :
-
-```text
-Docker service enabled + active
-docker info
-docker compose version
-docker buildx version
-```
-
-Ces validations ne constituent pas encore une qualification CI ou E2E tant qu'elles n'ont pas été exécutées sur un hôte cible réel ou sur le futur harness de qualification.
-
-## Cible DC-08
-
-Le prochain jalon remplacera progressivement l'orchestration native par :
-
-```text
+Topology validation
+        ↓
 common
-  ↓
+        ↓
 docker_engine
-  ↓
+        ↓
 compose_stack
 ```
 
-avec des inventories séparés :
+Les anciens rôles natifs `postgresql`, `redis`, `django_app`, `celery`, `celery_beat` et `nginx` ne sont plus appelés par `site.yml`.
+
+Le projet attend exactement un hôte dans le groupe `app` et refuse un groupe `database` actif afin d'éviter de réutiliser par erreur l'ancienne topologie systemd.
+
+## Inventories
 
 ```text
-dev
-stg
-prod
+inventories/dev/
+inventories/stg/
+inventories/prod/
 ```
 
-et une sélection explicite des overlays Compose correspondants.
+Chaque inventory fournit :
+
+```text
+hosts.example.yml
+host_vars/server1.example.yml
+group_vars/all.yml
+group_vars/vault.example.yml
+```
+
+Copier les fichiers `.example` vers leurs noms runtime, puis chiffrer `vault.yml`. Les vrais `hosts.yml`, `host_vars/server1.yml` et `vault.yml` sont ignorés par Git.
+
+## Exécution
+
+Depuis `ansible-project/` :
+
+```bash
+ansible-playbook -i inventories/dev/hosts.yml playbooks/site.yml --ask-vault-pass
+ansible-playbook -i inventories/stg/hosts.yml playbooks/site.yml --ask-vault-pass
+ansible-playbook -i inventories/prod/hosts.yml playbooks/site.yml --ask-vault-pass
+```
+
+## Sélection Compose
+
+`deployment_environment` est fourni par l'inventory. Le rôle `compose_stack` sélectionne alors exactement :
+
+```text
+dev  → compose.yml + compose.dev.yml
+stg  → compose.yml + compose.stg.yml
+prod → compose.yml + compose.prod.yml
+```
+
+En STG/PROD, `APP_IMAGE` doit être une référence immuable `@sha256:<64 hex>`.
+
+## Runtime environment
+
+Le fichier distant :
+
+```text
+/opt/datascientest-compose/docker/.env.runtime
+```
+
+est rendu en mode `0600` depuis les variables d'inventory/Vault avec `no_log: true`. DC-09 renforcera encore la gestion, la rotation et les gates de secrets.
+
+## Validation actuelle
+
+Le rôle exécute `docker compose config --quiet`, puis `community.docker.docker_compose_v2` avec `wait=true`. Les preuves CI/E2E et l'idempotence stricte restent à qualifier dans les jalons ultérieurs.
+
+`playbooks/validate.yml` est encore issu de la baseline native et sera remplacé par la validation Compose dans DC-10/DC-12 ; il ne doit pas être utilisé comme preuve de cette variante.

@@ -1,16 +1,6 @@
 # Projet Ansible — Django/DRF + PostgreSQL + Redis + Celery + Docker Compose
 
-Variante dérivée du projet qualifié `django-postgresql-redis-celery/` afin de migrer l'exécution vers **Docker Engine + Docker Compose**, tout en conservant **Ansible comme plan de contrôle**.
-
-## Source de la copie
-
-```text
-source folder : 191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery/
-source branch : feat/ansible-django-postgresql-redis-celery
-source HEAD   : 0b33d1ea230b47492720127b2dcf837899da851d
-```
-
-Les preuves RC-10 à RC-13 de la baseline restent historiques uniquement et ne qualifient pas cette variante Docker Compose.
+Variante dérivée du projet qualifié `django-postgresql-redis-celery/` pour migrer l'exécution vers **Docker Engine + Docker Compose**, avec **Ansible comme plan de contrôle**.
 
 ## Statut
 
@@ -26,9 +16,10 @@ DJANGO REST FRAMEWORK           ✅ IMPLEMENTED
 BASE DOCKER COMPOSE STACK       ✅ IMPLEMENTED
 MULTI-ENV COMPOSE               ✅ IMPLEMENTED
 ANSIBLE DOCKER ENGINE           ✅ IMPLEMENTED
-ANSIBLE COMPOSE DEPLOY          ⏳
-SECRETS / ENV INJECTION         ⏳
-HEALTHCHECKS / PERSISTENCE      🟡 BASE IMPLEMENTED
+ANSIBLE COMPOSE DEPLOY          ✅ IMPLEMENTED
+INVENTORIES DEV/STG/PROD        ✅ IMPLEMENTED
+SECRETS / ENV HARDENING         ⏳
+RUNTIME HARDENING               ⏳
 STATIC GATE                     ⏳
 COMPOSE E2E                     ⏳
 STRICT IDEMPOTENCE              ⏳
@@ -38,11 +29,12 @@ FINAL REPORT                    ⏳
 
 Aucun statut runtime GREEN n'est revendiqué tant que les futurs gates Ansible/Docker/Compose/CI n'ont pas été réellement exécutés.
 
-## Configuration Django
+## Django / DRF / configuration
+
+La configuration est multi-environnement :
 
 ```text
 django-app/config/settings/
-├── __init__.py
 ├── base.py
 ├── database.py
 ├── dev.py
@@ -50,54 +42,19 @@ django-app/config/settings/
 └── prod.py
 ```
 
-Sélection :
+Politique DB :
 
 ```text
-DJANGO_SETTINGS_MODULE=config.settings.dev
-DJANGO_SETTINGS_MODULE=config.settings.stg
-DJANGO_SETTINGS_MODULE=config.settings.prod
+DEV Lite + DATABASE_URL absente → SQLite autorisé
+DEV Full Compose                → PostgreSQL obligatoire
+STG/PROD                        → PostgreSQL obligatoire, SQLite interdit
 ```
 
-`django-environ` lit et caste la configuration. Ansible Vault restera la source des secrets pour les environnements gérés.
+L'API asynchrone utilise Django REST Framework et conserve les endpoints Celery historiques.
 
-Politique base de données :
+## Image 12-Factor
 
-```text
-DEV + DATABASE_URL absente      → SQLite ✅
-DEV + PostgreSQL URL            → PostgreSQL ✅
-DEV + SQLite URL explicite      → FAIL ❌
-STG/PROD + DATABASE_URL absente → FAIL ❌
-STG/PROD + SQLite               → FAIL ❌
-STG/PROD + PostgreSQL           → PostgreSQL ✅
-```
-
-Aucun fallback sur erreur de connexion PostgreSQL n'est autorisé.
-
-## Django REST Framework
-
-Endpoints asynchrones :
-
-```text
-POST /api/tasks/add/
-POST /api/tasks/uppercase/
-POST /api/tasks/database-probe/
-GET  /api/tasks/<task_id>/
-```
-
-Les serializers DRF conservent les validations métier historiques, HTTP 202 pour les soumissions et aucune fuite d'exception Celery.
-
-## Image applicative 12-Factor
-
-```text
-django-app/
-├── Dockerfile
-├── .dockerignore
-└── docker/
-    ├── entrypoint.sh
-    └── gunicorn.conf.py
-```
-
-Une seule image non-root alimente :
+Une seule image applicative non-root sert à :
 
 ```text
              APP_IMAGE
@@ -106,9 +63,9 @@ Une seule image non-root alimente :
      Gunicorn  Celery  Celery Beat
 ```
 
-Les dépendances sont installées au build, les logs vont vers stdout/stderr, `SIGTERM` est propagé au process PID 1 et les migrations/`collectstatic` restent des admin one-shot processes.
+Dépendances au build, logs stdout/stderr, SIGTERM, pas de migration automatique au boot.
 
-## Docker Compose multi-environnement
+## Docker Compose
 
 ```text
 docker/
@@ -118,122 +75,22 @@ docker/
 └── compose.prod.yml
 ```
 
-Topologie commune :
+Services :
 
 ```text
 nginx
-  ↓
 web
- ├── db
- └── redis
-      ↑
- worker / beat
+db
+redis
+worker
+beat
 ```
 
-DEV Full construit localement l'image et exige PostgreSQL. STG/PROD exigent `APP_IMAGE`, ne buildent pas depuis le serveur et n'utilisent aucun bind mount du code.
+DEV Full construit localement l'image commune. STG/PROD exigent une `APP_IMAGE` déjà construite et ne buildent pas sur le serveur.
 
-Promotion cible :
+## Orchestration Ansible active — DC-08
 
-```text
-CI build
-   ↓
-APP_IMAGE=registry/...@sha256:ABC
-   ↓
-STG qualifie sha256:ABC
-   ↓
-PROD réutilise sha256:ABC
-```
-
-## Ansible Docker Engine — DC-07
-
-Le nouveau rôle actif est :
-
-```text
-ansible-project/roles/docker_engine/
-├── README.md
-├── defaults/main.yml
-├── tasks/main.yml
-└── meta/main.yml
-```
-
-Playbook autonome :
-
-```text
-ansible-project/playbooks/docker_engine.yml
-```
-
-Le rôle cible Ubuntu 24.04/Noble et installe Docker depuis le dépôt APT officiel :
-
-```text
-/etc/apt/keyrings/docker.asc
-/etc/apt/sources.list.d/docker.sources
-
-docker-ce
-docker-ce-cli
-containerd.io
-docker-buildx-plugin
-docker-compose-plugin
-```
-
-Le service `docker` est configuré `started + enabled` puis le rôle valide :
-
-```text
-docker info
-docker compose version
-docker buildx version
-```
-
-Aucun utilisateur n'est ajouté automatiquement au groupe `docker` et aucun conteneur applicatif n'est encore déployé par DC-07.
-
-Les anciens rôles systemd `postgresql`, `redis`, `django_app`, `celery`, `celery_beat`, `nginx` restent temporairement présents comme référence de migration mais ne seront pas utilisés dans l'orchestration Compose finale.
-
-## Persistance et healthchecks Compose
-
-Volumes :
-
-```text
-postgres_data
-redis_data
-static_data
-```
-
-Healthchecks de base :
-
-```text
-db     → pg_isready
-redis  → PING authentifié
-web    → GET /health/
-worker → celery inspect ping
-beat   → process Celery Beat PID 1
-nginx  → GET /health/ via proxy
-```
-
-La preuve forte de Beat restera une tâche périodique réellement observée en E2E.
-
-## Contrat réseau cible
-
-```text
-DEV Full : Nginx uniquement, 127.0.0.1:8080 par défaut
-STG/PROD: Nginx uniquement, :80 par défaut
-
-8000    published=false
-5432    published=false
-6379    published=false
-```
-
-Service discovery :
-
-```text
-nginx  → web:8000
-web    → db:5432
-web    → redis:6379
-worker → db:5432
-worker → redis:6379
-beat   → db:5432
-beat   → redis:6379
-```
-
-## Cible Ansible finale
+Le point d'entrée actif est désormais :
 
 ```text
 common
@@ -243,7 +100,69 @@ docker_engine
 compose_stack
 ```
 
-## Roadmap canonique
+Les anciens rôles natifs `postgresql`, `redis`, `django_app`, `celery`, `celery_beat` et `nginx` restent comme référence historique mais ne sont plus appelés par `playbooks/site.yml`.
+
+Le rôle `compose_stack` :
+
+```text
+valide environment + APP_IMAGE
+        ↓
+déploie docker/ sous /opt/datascientest-compose
+        ↓
+rend .env.runtime en 0600
+        ↓
+docker compose config --quiet
+        ↓
+démarre db + redis + web
+        ↓
+migrate / collectstatic / PeriodicTask en one-shot
+        ↓
+converge les 6 services avec docker_compose_v2
+```
+
+En STG/PROD, `APP_IMAGE` doit correspondre strictement à :
+
+```text
+registry/path/image@sha256:<64 hex>
+```
+
+## Inventories
+
+```text
+ansible-project/inventories/
+├── dev/
+├── stg/
+└── prod/
+```
+
+Chaque environnement fournit des exemples de `hosts`, `host_vars`, `group_vars/all.yml` et `vault.example.yml`. Les vrais `hosts.yml`, `host_vars/server1.yml` et `vault.yml` sont ignorés par Git.
+
+La topologie active ne contient plus de groupe `database` : un seul hôte `app` héberge Docker et PostgreSQL vit dans la stack Compose.
+
+## Secrets
+
+Les trois secrets de base restent :
+
+```text
+vault_django_secret_key
+vault_postgresql_password
+vault_redis_password
+```
+
+Ils alimentent un fichier runtime distant protégé ; les passwords sont URL-encodés lorsqu'ils entrent dans `DATABASE_URL` et les URLs Redis. DC-09 renforcera la gestion complète du lifecycle et les gates anti-fuite.
+
+## Contrat réseau cible
+
+```text
+DEV Full : Nginx seulement sur 127.0.0.1:8080 par défaut
+STG/PROD: Nginx seulement sur :80 par défaut
+
+8000 Gunicorn   published=false
+5432 PostgreSQL published=false
+6379 Redis      published=false
+```
+
+## Roadmap
 
 ```text
 DC-00  Controlled baseline copy                                  ✅
@@ -254,8 +173,8 @@ DC-04  12-Factor Docker image                                     ✅ IMPLEMENTE
 DC-05  Base Docker Compose stack                                  ✅ IMPLEMENTED
 DC-06  Multi-environment Compose                                  ✅ IMPLEMENTED
 DC-07  Ansible docker_engine                                      ✅ IMPLEMENTED
-DC-08  Ansible compose_stack + inventories dev/stg/prod           ⏭ NEXT
-DC-09  Secure runtime configuration                               ⏳
+DC-08  Ansible compose_stack + inventories dev/stg/prod           ✅ IMPLEMENTED
+DC-09  Secure runtime configuration                               ⏭ NEXT
 DC-10  Runtime hardening                                          ⏳
 DC-11  Unit tests + static gate                                   ⏳
 DC-12  DEV Full E2E                                               ⏳
@@ -265,4 +184,4 @@ DC-15  Package + SHA-256 + artifact                               ⏳
 DC-16  Final qualification report + 12-Factor matrix              ⏳
 ```
 
-Le plan canonique complet est `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md`. Les jalons réalisés sont documentés dans les fichiers `DC_*.md` correspondants.
+Les preuves historiques de la baseline native ne qualifient pas cette variante Docker Compose.

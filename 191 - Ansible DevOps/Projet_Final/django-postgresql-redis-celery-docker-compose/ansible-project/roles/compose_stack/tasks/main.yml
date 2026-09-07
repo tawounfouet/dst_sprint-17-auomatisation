@@ -1,0 +1,234 @@
+---
+- name: Validate Compose deployment contract
+  ansible.builtin.assert:
+    that:
+      - compose_stack_environment in compose_stack_allowed_environments
+      - compose_stack_app_image | length > 0
+      - compose_stack_runtime_environment is mapping
+      - "'APP_IMAGE' in compose_stack_runtime_environment"
+      - "'APPLICATION_ENV' in compose_stack_runtime_environment"
+      - "'DJANGO_SETTINGS_MODULE' in compose_stack_runtime_environment"
+      - "'DJANGO_SECRET_KEY' in compose_stack_runtime_environment"
+      - "'DATABASE_URL' in compose_stack_runtime_environment"
+      - "'CELERY_BROKER_URL' in compose_stack_runtime_environment"
+      - "'CELERY_RESULT_BACKEND' in compose_stack_runtime_environment"
+      - "'POSTGRES_DB' in compose_stack_runtime_environment"
+      - "'POSTGRES_USER' in compose_stack_runtime_environment"
+      - "'POSTGRES_PASSWORD' in compose_stack_runtime_environment"
+      - "'REDIS_PASSWORD' in compose_stack_runtime_environment"
+      - compose_stack_runtime_environment.APPLICATION_ENV == compose_stack_environment
+      - compose_stack_runtime_environment.APP_IMAGE == compose_stack_app_image
+    fail_msg: >-
+      compose_stack requires a supported environment, an APP_IMAGE and the
+      complete runtime environment contract.
+    quiet: true
+  no_log: true
+
+- name: Require immutable application image digest for staging and production
+  ansible.builtin.assert:
+    that:
+      - compose_stack_app_image is match('^.+@sha256:[0-9a-fA-F]{64}$')
+    fail_msg: >-
+      STG and PROD require APP_IMAGE to be an immutable image reference ending
+      with @sha256:<64-hex-digest>.
+    quiet: true
+  when: compose_stack_environment in compose_stack_digest_required_environments
+
+- name: Validate Django settings module matches deployment environment
+  ansible.builtin.assert:
+    that:
+      - compose_stack_runtime_environment.DJANGO_SETTINGS_MODULE == 'config.settings.' ~ compose_stack_environment
+    fail_msg: DJANGO_SETTINGS_MODULE must match deployment_environment exactly.
+    quiet: true
+
+- name: Create Compose release directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ compose_stack_release_root }}"
+    - "{{ compose_stack_project_directory }}"
+
+- name: Deploy Compose definitions and service configuration
+  ansible.builtin.copy:
+    src: "{{ compose_stack_source_directory }}/"
+    dest: "{{ compose_stack_project_directory }}/"
+    owner: root
+    group: root
+    directory_mode: '0755'
+    mode: preserve
+
+- name: Ensure Redis runtime entrypoint is executable
+  ansible.builtin.file:
+    path: "{{ compose_stack_project_directory }}/redis/entrypoint.sh"
+    owner: root
+    group: root
+    mode: '0555'
+    state: file
+
+- name: Deploy application build context for DEV Full
+  ansible.builtin.copy:
+    src: "{{ compose_stack_application_source_directory }}/"
+    dest: "{{ compose_stack_application_directory }}/"
+    owner: root
+    group: root
+    directory_mode: '0755'
+    mode: preserve
+  when:
+    - compose_stack_environment == 'dev'
+    - compose_stack_copy_application_source_in_dev | bool
+
+- name: Render protected Compose runtime environment
+  ansible.builtin.template:
+    src: runtime.env.j2
+    dest: "{{ compose_stack_project_directory }}/{{ compose_stack_runtime_env_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+
+- name: Validate merged Compose configuration
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --env-file
+      - "{{ compose_stack_runtime_env_file }}"
+      - -f
+      - "{{ compose_stack_base_file }}"
+      - -f
+      - "{{ compose_stack_overlay_file }}"
+      - config
+      - --quiet
+    chdir: "{{ compose_stack_project_directory }}"
+  changed_when: false
+  no_log: true
+
+- name: Start backing services and web release process
+  community.docker.docker_compose_v2:
+    project_src: "{{ compose_stack_project_directory }}"
+    project_name: "{{ compose_stack_project_name }}"
+    files: "{{ compose_stack_files }}"
+    env_files:
+      - "{{ compose_stack_runtime_env_file }}"
+    services:
+      - db
+      - redis
+      - web
+    state: present
+    pull: "{{ compose_stack_pull_policy }}"
+    build: "{{ compose_stack_build_policy }}"
+    remove_orphans: false
+    wait: true
+    wait_timeout: "{{ compose_stack_wait_timeout }}"
+  no_log: true
+
+- name: Apply Django database migrations as one-off process
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --env-file
+      - "{{ compose_stack_runtime_env_file }}"
+      - -f
+      - "{{ compose_stack_base_file }}"
+      - -f
+      - "{{ compose_stack_overlay_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - web
+      - python
+      - manage.py
+      - migrate
+      - --noinput
+    chdir: "{{ compose_stack_project_directory }}"
+  register: compose_stack_migrate_result
+  changed_when: "'No migrations to apply.' not in compose_stack_migrate_result.stdout"
+  no_log: true
+
+- name: Collect Django static assets as one-off process
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --env-file
+      - "{{ compose_stack_runtime_env_file }}"
+      - -f
+      - "{{ compose_stack_base_file }}"
+      - -f
+      - "{{ compose_stack_overlay_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - web
+      - python
+      - manage.py
+      - collectstatic
+      - --noinput
+    chdir: "{{ compose_stack_project_directory }}"
+  register: compose_stack_collectstatic_result
+  changed_when: "'0 static files copied' not in compose_stack_collectstatic_result.stdout"
+  no_log: true
+
+- name: Ensure demo periodic task exists as one-off admin process
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --env-file
+      - "{{ compose_stack_runtime_env_file }}"
+      - -f
+      - "{{ compose_stack_base_file }}"
+      - -f
+      - "{{ compose_stack_overlay_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - web
+      - python
+      - manage.py
+      - ensure_demo_periodic_task
+      - --seconds
+      - "30"
+    chdir: "{{ compose_stack_project_directory }}"
+  register: compose_stack_periodic_task_result
+  changed_when: "compose_stack_periodic_task_result.stdout | trim != 'unchanged'"
+  no_log: true
+
+- name: Converge complete Docker Compose application stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ compose_stack_project_directory }}"
+    project_name: "{{ compose_stack_project_name }}"
+    files: "{{ compose_stack_files }}"
+    env_files:
+      - "{{ compose_stack_runtime_env_file }}"
+    state: present
+    pull: "{{ compose_stack_pull_policy }}"
+    build: "never"
+    remove_orphans: "{{ compose_stack_remove_orphans }}"
+    wait: "{{ compose_stack_wait }}"
+    wait_timeout: "{{ compose_stack_wait_timeout }}"
+  register: compose_stack_converge_result
+  no_log: true
+
+- name: Validate Compose project is visible
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --env-file
+      - "{{ compose_stack_runtime_env_file }}"
+      - -f
+      - "{{ compose_stack_base_file }}"
+      - -f
+      - "{{ compose_stack_overlay_file }}"
+      - ps
+      - --all
+    chdir: "{{ compose_stack_project_directory }}"
+  register: compose_stack_ps_result
+  changed_when: false
+  no_log: true
