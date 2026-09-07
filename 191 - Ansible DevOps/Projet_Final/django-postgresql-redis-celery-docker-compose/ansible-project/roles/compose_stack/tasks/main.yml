@@ -187,23 +187,22 @@
 
 - name: Apply Django database migrations as one-off process
   ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --env-file
-      - "{{ compose_stack_runtime_env_file }}"
-      - -f
-      - "{{ compose_stack_base_file }}"
-      - -f
-      - "{{ compose_stack_overlay_file }}"
-      - run
-      - --rm
-      - --no-deps
-      - web
-      - python
-      - manage.py
-      - migrate
-      - --noinput
+    argv: >-
+      {{
+        [
+          'docker', 'compose',
+          '--env-file', compose_stack_runtime_env_file,
+          '-f', compose_stack_base_file,
+          '-f', compose_stack_overlay_file,
+          'run', '--rm', '--no-deps'
+        ]
+        + (
+          ['--pull', 'never']
+          if compose_stack_environment in compose_stack_digest_required_environments
+          else []
+        )
+        + ['web', 'python', 'manage.py', 'migrate', '--noinput']
+      }}
     chdir: "{{ compose_stack_project_directory }}"
   register: compose_stack_migrate_result
   changed_when: "'No migrations to apply.' not in compose_stack_migrate_result.stdout"
@@ -211,23 +210,22 @@
 
 - name: Collect Django static assets as one-off process
   ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --env-file
-      - "{{ compose_stack_runtime_env_file }}"
-      - -f
-      - "{{ compose_stack_base_file }}"
-      - -f
-      - "{{ compose_stack_overlay_file }}"
-      - run
-      - --rm
-      - --no-deps
-      - web
-      - python
-      - manage.py
-      - collectstatic
-      - --noinput
+    argv: >-
+      {{
+        [
+          'docker', 'compose',
+          '--env-file', compose_stack_runtime_env_file,
+          '-f', compose_stack_base_file,
+          '-f', compose_stack_overlay_file,
+          'run', '--rm', '--no-deps'
+        ]
+        + (
+          ['--pull', 'never']
+          if compose_stack_environment in compose_stack_digest_required_environments
+          else []
+        )
+        + ['web', 'python', 'manage.py', 'collectstatic', '--noinput']
+      }}
     chdir: "{{ compose_stack_project_directory }}"
   register: compose_stack_collectstatic_result
   changed_when: "'0 static files copied' not in compose_stack_collectstatic_result.stdout"
@@ -235,24 +233,25 @@
 
 - name: Ensure demo periodic task exists as one-off admin process
   ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --env-file
-      - "{{ compose_stack_runtime_env_file }}"
-      - -f
-      - "{{ compose_stack_base_file }}"
-      - -f
-      - "{{ compose_stack_overlay_file }}"
-      - run
-      - --rm
-      - --no-deps
-      - web
-      - python
-      - manage.py
-      - ensure_demo_periodic_task
-      - --seconds
-      - "30"
+    argv: >-
+      {{
+        [
+          'docker', 'compose',
+          '--env-file', compose_stack_runtime_env_file,
+          '-f', compose_stack_base_file,
+          '-f', compose_stack_overlay_file,
+          'run', '--rm', '--no-deps'
+        ]
+        + (
+          ['--pull', 'never']
+          if compose_stack_environment in compose_stack_digest_required_environments
+          else []
+        )
+        + [
+          'web', 'python', 'manage.py', 'ensure_demo_periodic_task',
+          '--seconds', '30'
+        ]
+      }}
     chdir: "{{ compose_stack_project_directory }}"
   register: compose_stack_periodic_task_result
   changed_when: "compose_stack_periodic_task_result.stdout | trim != 'unchanged'"
