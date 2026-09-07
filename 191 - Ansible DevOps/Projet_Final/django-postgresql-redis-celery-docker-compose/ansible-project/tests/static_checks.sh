@@ -222,7 +222,12 @@ firewall_template = (ansible / "roles/docker_runtime_hardening/templates/docker-
 daemon_template = (ansible / "roles/docker_runtime_hardening/templates/daemon.json.j2").read_text(encoding="utf-8")
 require("dockerd" in hardening_tasks and "--validate" in hardening_tasks, "dockerd validation gate missing")
 require("DOCKER-USER" in firewall_template and "conntrack" in firewall_template and "ctorigdstport" in firewall_template, "DOCKER-USER original-port policy missing")
-require('"live-restore"' in daemon_template and '"firewall-backend"' in daemon_template, "daemon hardening template incomplete")
+require(
+    '"live-restore"' in daemon_template
+    and '"iptables": true' in daemon_template
+    and '"ip6tables": true' in daemon_template,
+    "portable iptables Docker daemon hardening template incomplete",
+)
 
 for env_name in ("stg", "prod"):
     overlay = (docker / f"compose.{env_name}.yml").read_text(encoding="utf-8")
@@ -365,8 +370,7 @@ if command -v dockerd >/dev/null 2>&1; then
   "log-driver": "json-file",
   "log-opts": {"max-size": "10m", "max-file": "3"},
   "iptables": true,
-  "ip6tables": true,
-  "firewall-backend": "iptables"
+  "ip6tables": true
 }
 EOF
   dockerd --validate --config-file "$TMP_DIR/daemon.json"
