@@ -1,5 +1,6 @@
 from celery import shared_task
 from django.db import connection
+from django.utils import timezone
 
 
 @shared_task(name="tasks_demo.add")
@@ -21,4 +22,12 @@ def database_probe():
     return {
         "database": "connected",
         "query": row[0],
+    }
+
+
+@shared_task(name="tasks_demo.periodic_heartbeat")
+def periodic_heartbeat():
+    return {
+        "status": "heartbeat",
+        "timestamp": timezone.now().isoformat(),
     }
