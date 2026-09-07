@@ -105,9 +105,9 @@
       - info
   register: docker_runtime_hardening_info
   changed_when: false
-  failed_when:
-    - docker_runtime_hardening_info.rc != 0 or
-      ('Live Restore Enabled: true' not in docker_runtime_hardening_info.stdout)
+  failed_when: >-
+    docker_runtime_hardening_info.rc != 0 or
+    ('Live Restore Enabled: true' not in docker_runtime_hardening_info.stdout)
 
 - name: Validate DOCKER-USER jump to project guard chain
   ansible.builtin.command:
