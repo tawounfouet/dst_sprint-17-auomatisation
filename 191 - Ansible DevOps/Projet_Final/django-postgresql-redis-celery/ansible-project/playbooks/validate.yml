@@ -1,5 +1,5 @@
 ---
-- name: Validate Django PostgreSQL deployment topology
+- name: Validate mono-host deployment topology
   hosts: localhost
   gather_facts: false
   become: false
@@ -8,16 +8,17 @@
     - topology
     - validation
   tasks:
-    - name: Validate required inventory groups
+    - name: Validate required inventory groups and mono-host contract
       ansible.builtin.assert:
         that:
           - "'app' in groups"
           - "'database' in groups"
           - "groups['app'] | length == 1"
           - "groups['database'] | length == 1"
+          - "groups['app'][0] == groups['database'][0]"
         fail_msg: >-
-          Runtime validation expects exactly one host in group 'app'
-          and exactly one host in group 'database'.
+          Runtime validation expects exactly one mono-host target shared by
+          groups 'app' and 'database'.
         quiet: true
 
 - name: Validate PostgreSQL database tier
@@ -90,20 +91,63 @@
         fail_msg: "PostgreSQL role {{ postgresql_user }} does not exist."
         quiet: true
 
-- name: Validate Django application tier
+- name: Validate Redis Celery and Django application runtime
   hosts: app
   become: true
   gather_facts: false
   any_errors_fatal: true
+  vars_files:
+    - ../inventories/prod/group_vars/vault.yml
   tags:
     - validation
     - app
+    - redis
+    - celery
+    - celery_beat
     - django
     - nginx
   vars:
     validation_http_host_header: "{{ inventory_hostname }}"
     validation_base_url: "http://127.0.0.1:{{ nginx_listen_port | default(80) }}"
   tasks:
+    - name: Check Redis service is active
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ redis_service_name | default('redis-server') }}"
+      register: validate_redis_service
+      changed_when: false
+      failed_when: >-
+        validate_redis_service.rc != 0 or
+        (validate_redis_service.stdout | trim) != 'active'
+
+    - name: Wait for Redis local port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ redis_port | default(6379) }}"
+        state: started
+        connect_timeout: 3
+        timeout: 15
+
+    - name: Validate authenticated Redis PING
+      ansible.builtin.command:
+        argv:
+          - redis-cli
+          - -h
+          - 127.0.0.1
+          - -p
+          - "{{ redis_port | default(6379) | string }}"
+          - ping
+      environment:
+        REDISCLI_AUTH: "{{ vault_redis_password }}"
+      register: validate_redis_ping
+      changed_when: false
+      failed_when: >-
+        validate_redis_ping.rc != 0 or
+        (validate_redis_ping.stdout | trim) != 'PONG'
+      no_log: true
+
     - name: Check Django Gunicorn service is active
       ansible.builtin.command:
         argv:
@@ -123,6 +167,30 @@
         state: started
         connect_timeout: 3
         timeout: 15
+
+    - name: Check Celery worker service is active
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ celery_service_name | default('datascientest-celery') }}"
+      register: validate_celery_worker_service
+      changed_when: false
+      failed_when: >-
+        validate_celery_worker_service.rc != 0 or
+        (validate_celery_worker_service.stdout | trim) != 'active'
+
+    - name: Check Celery Beat service is active
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ celery_beat_service_name | default('datascientest-celery-beat') }}"
+      register: validate_celery_beat_service
+      changed_when: false
+      failed_when: >-
+        validate_celery_beat_service.rc != 0 or
+        (validate_celery_beat_service.stdout | trim) != 'active'
 
     - name: Check Nginx service is active
       ansible.builtin.command:
@@ -206,6 +274,50 @@
           Django -> PostgreSQL SELECT 1 path.
         quiet: true
 
+    - name: Validate Django to Redis health endpoint
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/health/redis/"
+        method: GET
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        status_code: 200
+        return_content: true
+      register: validate_http_redis_health
+
+    - name: Assert Django to Redis health payload
+      ansible.builtin.assert:
+        that:
+          - validate_http_redis_health.json.status == 'healthy'
+          - validate_http_redis_health.json.redis == 'connected'
+        fail_msg: >-
+          Django /health/redis/ did not prove the expected
+          Django -> Redis PING path.
+        quiet: true
+
+    - name: Validate Celery worker health endpoint
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/health/celery/"
+        method: GET
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        status_code: 200
+        return_content: true
+      register: validate_http_celery_health
+      retries: 5
+      delay: 2
+      until:
+        - validate_http_celery_health.status == 200
+        - validate_http_celery_health.json.status == 'healthy'
+        - validate_http_celery_health.json.workers | int >= 1
+
+    - name: Assert Celery health payload
+      ansible.builtin.assert:
+        that:
+          - validate_http_celery_health.json.celery == 'connected'
+          - validate_http_celery_health.json.workers | int >= 1
+        fail_msg: "Celery worker did not answer the control ping."
+        quiet: true
+
     - name: Validate application information endpoint
       ansible.builtin.uri:
         url: "{{ validation_base_url }}/api/info/"
@@ -222,5 +334,117 @@
           - validate_http_info.json.application == 'datascientest-ansible-django'
           - validate_http_info.json.runtime == 'gunicorn'
           - validate_http_info.json.database == 'postgresql'
+          - validate_http_info.json.broker == 'redis'
+          - validate_http_info.json.async_runtime == 'celery'
+          - validate_http_info.json.scheduler == 'django-celery-beat'
         fail_msg: "Django /api/info/ payload does not satisfy the runtime contract."
+        quiet: true
+
+    - name: Submit real Celery add task through Django API
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/api/tasks/add/"
+        method: POST
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        body_format: json
+        body:
+          x: 21
+          y: 21
+        status_code: 202
+        return_content: true
+      register: validate_add_submit
+
+    - name: Assert add task was accepted
+      ansible.builtin.assert:
+        that:
+          - validate_add_submit.json.task_id is defined
+          - validate_add_submit.json.task_id | length > 0
+        fail_msg: "Django did not return a Celery task_id for add(21,21)."
+        quiet: true
+
+    - name: Poll real Celery add task until success
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/api/tasks/{{ validate_add_submit.json.task_id }}/"
+        method: GET
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        status_code: 200
+        return_content: true
+      register: validate_add_status
+      retries: 30
+      delay: 1
+      until:
+        - validate_add_status.json.status == 'SUCCESS'
+
+    - name: Assert real Celery add result
+      ansible.builtin.assert:
+        that:
+          - validate_add_status.json.result | int == 42
+        fail_msg: >-
+          The real Django -> Redis -> Celery Worker -> Redis result backend
+          round-trip did not return 42 for add(21,21).
+        quiet: true
+
+    - name: Submit real Celery database probe through Django API
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/api/tasks/database-probe/"
+        method: POST
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        body_format: json
+        body: {}
+        status_code: 202
+        return_content: true
+      register: validate_database_probe_submit
+
+    - name: Poll Celery database probe until success
+      ansible.builtin.uri:
+        url: "{{ validation_base_url }}/api/tasks/{{ validate_database_probe_submit.json.task_id }}/"
+        method: GET
+        headers:
+          Host: "{{ validation_http_host_header }}"
+        status_code: 200
+        return_content: true
+      register: validate_database_probe_status
+      retries: 30
+      delay: 1
+      until:
+        - validate_database_probe_status.json.status == 'SUCCESS'
+
+    - name: Assert Celery worker reached PostgreSQL
+      ansible.builtin.assert:
+        that:
+          - validate_database_probe_status.json.result.database == 'connected'
+          - validate_database_probe_status.json.result.query | int == 1
+        fail_msg: >-
+          Celery database_probe did not prove the Worker -> Django ->
+          PostgreSQL SELECT 1 path.
+        quiet: true
+
+    - name: Wait until Django Celery Beat has triggered the demo schedule
+      community.postgresql.postgresql_query:
+        login_db: "{{ postgresql_database }}"
+        query: >-
+          SELECT name, task, enabled, total_run_count
+          FROM django_celery_beat_periodictask
+          WHERE name = 'datascientest-demo-heartbeat'
+      become_user: postgres
+      register: validate_beat_schedule
+      changed_when: false
+      retries: 15
+      delay: 5
+      until: >-
+        validate_beat_schedule.query_result | length == 1
+        and (validate_beat_schedule.query_result[0].total_run_count | int) >= 1
+
+    - name: Assert Django Celery Beat schedule contract
+      ansible.builtin.assert:
+        that:
+          - validate_beat_schedule.query_result | length == 1
+          - validate_beat_schedule.query_result[0].task == 'tasks_demo.periodic_heartbeat'
+          - validate_beat_schedule.query_result[0].enabled | bool
+          - validate_beat_schedule.query_result[0].total_run_count | int >= 1
+        fail_msg: >-
+          Django Celery Beat did not prove a real scheduler trigger for
+          datascientest-demo-heartbeat.
         quiet: true
