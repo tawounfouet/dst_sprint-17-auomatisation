@@ -56,6 +56,15 @@ jobs:
           echo "APP_IMAGE=$immutable_ref" >> "$GITHUB_ENV"
           echo "DC13_ARTIFACT_PASS: immutable image prepared before STG Compose deployment"
 
+      - name: Preload third-party STG runtime images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker pull postgres:16-alpine
+          docker pull redis:7.4-alpine
+          docker pull nginx:1.27-alpine
+          echo "DC13_INFRA_IMAGES_PASS: third-party runtime images preloaded outside Compose"
+
       - name: Run DC-13 STG-like E2E
         working-directory: "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/ansible-project"
         shell: bash
