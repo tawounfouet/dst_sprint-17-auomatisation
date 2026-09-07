@@ -209,7 +209,7 @@ grep -Fq 'requirepass {{ redis_password }}' roles/redis/tasks/main.yml \
 if grep -REn 'redis_bind_address:.*0\.0\.0\.0|line:.*bind[[:space:]]+0\.0\.0\.0' roles/redis inventories/prod/group_vars/all.yml; then
   fail "Redis must never bind to 0.0.0.0 in this topology"
 fi
-if grep -REn 'redis_protected_mode:.*no([[:space:]"'"']|$)' roles/redis inventories/prod/group_vars/all.yml; then
+if grep -REn 'redis_protected_mode:.*no' roles/redis inventories/prod/group_vars/all.yml; then
   fail "Redis protected mode must not be disabled"
 fi
 if grep -En '^[[:space:]]*-[[:space:]]*-a[[:space:]]*$|redis-cli.*[[:space:]]-a[[:space:]]' roles/redis/tasks/main.yml; then
