@@ -15,7 +15,7 @@ permissions:
 jobs:
   redis-celery-monohost-e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 60
     env:
       PROJECT_DIR: 191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery/ansible-project
 
@@ -38,12 +38,27 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: bash tests/e2e/run_monohost_redis_celery_qualification.sh
 
-      - name: Write CI qualification manifest
+      - name: Build and verify qualified package
         if: success()
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -Eeuo pipefail
-          MANIFEST="../evidence/validation/redis-celery-rc11-ci-${GITHUB_RUN_ID}.txt"
+          PACKAGE_DIR="$RUNNER_TEMP/ansible-django-postgresql-redis-celery-qualified"
+          mkdir -p "$PACKAGE_DIR"
+          export PACKAGE_OUTPUT_DIR="$PACKAGE_DIR"
+
+          bash scripts/package.sh | tee "$PACKAGE_DIR/package.log"
+
+          ARCHIVE="$(find "$PACKAGE_DIR" -maxdepth 1 -type f -name 'django-postgresql-redis-celery-ansible-*.zip' -print -quit)"
+          test -n "$ARCHIVE"
+          CHECKSUM="$ARCHIVE.sha256"
+          test -f "$CHECKSUM"
+
+          sha256sum -c "$CHECKSUM"
+          bash tests/package_safety_check.sh "$ARCHIVE"
+
+          PACKAGE_SHA="$(awk '{print $1}' "$CHECKSUM")"
+          MANIFEST="../evidence/validation/redis-celery-rc12-ci-${GITHUB_RUN_ID}.txt"
           {
             echo "workflow=Ansible Django PostgreSQL Redis Celery Mono-Host Qualification"
             echo "run_id=${GITHUB_RUN_ID}"
@@ -63,9 +78,17 @@ jobs:
             echo "network_contract=80:true,8000:false,5432:false,6379:false"
             echo "idempotence_server1=changed=0"
             echo "post_idempotence_runtime=green"
+            echo "archive=$(basename "$ARCHIVE")"
+            echo "sha256=${PACKAGE_SHA}"
+            echo "package_safety=pass"
             echo "rc10=green"
             echo "rc11=green"
+            echo "rc12=green"
           } | tee "$MANIFEST"
+
+          echo "PACKAGE_DIR=$PACKAGE_DIR" >> "$GITHUB_ENV"
+          echo "QUALIFIED_ARCHIVE=$(basename "$ARCHIVE")" >> "$GITHUB_ENV"
+          echo "QUALIFIED_SHA256=$PACKAGE_SHA" >> "$GITHUB_ENV"
 
       - name: Upload failure diagnostics
         if: failure()
@@ -78,12 +101,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload RC-11 qualification evidence
+      - name: Upload RC-12 qualified package and evidence
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ansible-django-postgresql-redis-celery-rc11-${{ github.run_id }}
+          name: ansible-django-postgresql-redis-celery-qualified-${{ github.run_id }}
           path: |
+            ${{ env.PACKAGE_DIR }}/*
             191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery/evidence/logs/*.txt
             191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery/evidence/validation/*
           if-no-files-found: error
