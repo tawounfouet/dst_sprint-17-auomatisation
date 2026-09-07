@@ -1,0 +1,133 @@
+name: Ansible Django PostgreSQL Redis Celery Compose Package
+
+on:
+  push:
+    branches:
+      - feat/ansible-django-postgresql-redis-celery-docker-compose
+    paths:
+      - "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/**"
+      - ".github/workflows/ansible-django-postgresql-redis-celery-docker-compose-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dc15-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dc15-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PROJECT_DIR: 191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose
+      PACKAGE_STAGE: .dc15-artifact
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Show package tool versions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python --version
+          zip -v | head -n 2
+          sha256sum --version | head -n 1
+
+      - name: Build and validate safe source package
+        id: package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$PACKAGE_STAGE"
+          mkdir -p "$PACKAGE_STAGE"
+
+          SHORT_SHA="${GITHUB_SHA:0:12}"
+          ARCHIVE_NAME="django-postgresql-redis-celery-docker-compose-ansible-${SHORT_SHA}.zip"
+
+          chmod +x "$PROJECT_DIR/ansible-project/scripts/package.sh"
+          PACKAGE_OUTPUT_DIR="$GITHUB_WORKSPACE/$PACKAGE_STAGE" \
+          PACKAGE_ARCHIVE_NAME="$ARCHIVE_NAME" \
+            "$PROJECT_DIR/ansible-project/scripts/package.sh"
+
+          ARCHIVE="$PACKAGE_STAGE/$ARCHIVE_NAME"
+          CHECKSUM="$ARCHIVE.sha256"
+          MANIFEST="$ARCHIVE.manifest.json"
+
+          test -s "$ARCHIVE"
+          test -s "$CHECKSUM"
+          test -s "$MANIFEST"
+
+          (
+            cd "$PACKAGE_STAGE"
+            sha256sum -c "$ARCHIVE_NAME.sha256"
+          )
+          echo "PACKAGE_CHECKSUM_PASS"
+
+          python3 "$PROJECT_DIR/ansible-project/scripts/secret_hygiene.py" archive "$ARCHIVE"
+          python3 "$PROJECT_DIR/ansible-project/scripts/secret_hygiene.py" tree "$PACKAGE_STAGE"
+          echo "PACKAGE_SECRET_SCAN_PASS"
+
+          python3 - "$MANIFEST" "$ARCHIVE_NAME" "$GITHUB_SHA" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          manifest_path, archive_name, expected_commit = sys.argv[1:]
+          payload = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+          assert payload["schema_version"] == 1
+          assert payload["archive"] == archive_name
+          assert payload["source_commit"] == expected_commit
+          assert len(payload["sha256"]) == 64
+          assert payload["size_bytes"] > 0
+          print("PACKAGE_MANIFEST_PASS")
+          PY
+
+          echo "archive_name=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
+          echo "archive_sha256=$(awk '{print $1}' "$CHECKSUM")" >> "$GITHUB_OUTPUT"
+          echo "archive_size_bytes=$(python3 -c 'import os,sys; print(os.path.getsize(sys.argv[1]))' "$ARCHIVE")" >> "$GITHUB_OUTPUT"
+          echo "DC15_PACKAGE_PASS"
+
+      - name: Upload DC-15 package artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: dc15-django-postgresql-redis-celery-docker-compose-${{ github.sha }}
+          path: |
+            ${{ env.PACKAGE_STAGE }}/*.zip
+            ${{ env.PACKAGE_STAGE }}/*.zip.sha256
+            ${{ env.PACKAGE_STAGE }}/*.zip.manifest.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Report package qualification
+        shell: bash
+        env:
+          ARCHIVE_NAME: ${{ steps.package.outputs.archive_name }}
+          ARCHIVE_SHA256: ${{ steps.package.outputs.archive_sha256 }}
+          ARCHIVE_SIZE_BYTES: ${{ steps.package.outputs.archive_size_bytes }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$ARCHIVE_NAME"
+          test -n "$ARCHIVE_SHA256"
+          test -n "$ARCHIVE_SIZE_BYTES"
+          test -n "$ARTIFACT_ID"
+          printf 'Archive: %s\n' "$ARCHIVE_NAME"
+          printf 'Archive SHA-256: %s\n' "$ARCHIVE_SHA256"
+          printf 'Archive size bytes: %s\n' "$ARCHIVE_SIZE_BYTES"
+          printf 'GitHub artifact ID: %s\n' "$ARTIFACT_ID"
+          if [[ -n "$ARTIFACT_DIGEST" ]]; then
+            printf 'GitHub artifact digest: %s\n' "$ARTIFACT_DIGEST"
+          fi
+          echo "PACKAGE_ARTIFACT_UPLOAD_PASS"
+          echo "DC15_PACKAGE_ARTIFACT_PASS"
