@@ -1,0 +1,13 @@
+---
+redis_packages:
+  - redis-server
+  - redis-tools
+redis_service_name: redis-server
+redis_config_file: /etc/redis/redis.conf
+redis_bind_address: 127.0.0.1
+redis_port: 6379
+redis_protected_mode: "yes"
+redis_supervised_mode: systemd
+redis_password: "{{ vault_redis_password }}"
+redis_broker_database: 0
+redis_result_database: 1

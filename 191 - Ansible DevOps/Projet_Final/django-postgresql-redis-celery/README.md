@@ -10,7 +10,7 @@ ARCHITECTURE / CONTRACTS ✅
 PYTHON DEPENDENCIES      ✅
 DJANGO / CELERY CONFIG   ✅
 ASYNC TASK API           ✅ IMPLEMENTED
-REDIS IMPLEMENTATION     ⏳
+REDIS ROLE               ✅ IMPLEMENTED
 CELERY WORKER            ⏳
 E2E QUALIFICATION        ⏳
 IDEMPOTENCE              ⏳
@@ -26,8 +26,6 @@ Source dossier : 191 - Ansible DevOps/Projet_Final/django-postgresql/
 Source snapshot : 22feae813b4e85df891304b596cfb07b8940081b
 Branche         : feat/ansible-django-postgresql-project
 ```
-
-Le projet source a été qualifié en mono-host sur Ubuntu 24.04 avec Nginx, Gunicorn, Django et PostgreSQL. Cette preuve sert uniquement de référence de conception.
 
 ## Architecture cible
 
@@ -52,7 +50,7 @@ Le contrat réseau est :
 6379  → localhost-only
 ```
 
-Redis sera utilisé comme broker Celery (`/0`) et result backend (`/1`), avec authentification et mot de passe fourni par Ansible Vault.
+Redis est prévu comme broker Celery (`/0`) et result backend (`/1`) avec mot de passe fourni par Ansible Vault.
 
 ## Dépendances Python
 
@@ -68,26 +66,11 @@ Le runtime conserve Python standard `venv` sous `.venv` ; aucune dépendance `vi
 
 ## Intégration Celery Django
 
-L'application dispose de :
+`django-app/config/celery.py` initialise Celery et `config/__init__.py` expose l'application. Django charge `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` et `CELERY_RESULT_EXPIRES` avec sérialisation JSON et timezone alignée sur Django.
 
-```text
-django-app/config/celery.py
-```
+## API de tâches
 
-et `config/__init__.py` expose l'application Celery. Django charge `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` et `CELERY_RESULT_EXPIRES`, avec sérialisation JSON et timezone alignée sur Django.
-
-Les URLs sont préparées par Ansible pour la topologie mono-host :
-
-```text
-broker  → Redis 127.0.0.1:6379/0
-result  → Redis 127.0.0.1:6379/1
-```
-
-Le secret Redis est référencé via `vault_redis_password`.
-
-## API de tâches — RC-04
-
-L'application `tasks_demo` fournit désormais les tâches :
+L'application `tasks_demo` fournit :
 
 ```text
 add(21, 21)                → 42
@@ -95,7 +78,7 @@ uppercase("datascientest") → "DATASCIENTEST"
 database_probe()           → PostgreSQL → SELECT 1
 ```
 
-Endpoints implémentés :
+Endpoints :
 
 ```text
 POST /api/tasks/add/
@@ -104,9 +87,30 @@ POST /api/tasks/database-probe/
 GET  /api/tasks/<task_id>/
 ```
 
-Le endpoint de statut ne renvoie pas le détail brut des exceptions Celery en cas d'échec. Les endpoints POST sont volontairement `csrf_exempt` pour ce laboratoire JSON sans session ; cette décision n'est pas un modèle d'API publique de production et devra être remplacée par une authentification/API policy adaptée avant exposition réelle.
+## Rôle Redis — RC-05
 
-Les tests unitaires mockent actuellement le broker et le backend. La preuve réelle Django → Redis → Celery → résultat sera apportée par la qualification E2E après RC-05/RC-06.
+Le nouveau rôle `roles/redis/` implémente :
+
+```text
+redis-server + redis-tools
+bind 127.0.0.1
+protected-mode yes
+port 6379
+supervised systemd
+requirepass via Vault
+service enabled/started
+PING authentifié → PONG
+```
+
+Le secret est transmis à `redis-cli` via `REDISCLI_AUTH` et les tâches qui manipulent le mot de passe utilisent `no_log: true`.
+
+Le rôle est implémenté mais ne sera réellement exécuté par `site.yml` qu'au jalon d'orchestration ; sa preuve runtime complète viendra avec RC-07/RC-08 puis la qualification E2E.
+
+## À propos de Django Celery Beat
+
+`django-celery-beat` **n'est pas encore intégré** dans cette variante. La configuration actuelle couvre l'application Celery, le futur worker, Redis broker/result backend et l'API de tâches, mais pas encore un scheduler de tâches périodiques persistant en base Django.
+
+Une extension dédiée pourra être ajoutée après le worker Celery afin de gérer proprement `django-celery-beat`, ses migrations et un service systemd `celery-beat`.
 
 ## Rôles cibles
 
@@ -127,18 +131,15 @@ common → postgresql → redis → django_app → celery → nginx
 
 ## Documentation
 
-Le plan détaillé est défini dans [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).
-
-Les contrats d'architecture sont définis dans [`ARCHITECTURE.md`](./ARCHITECTURE.md).
-
-Les étapes sont documentées dans :
-
 ```text
+IMPLEMENTATION_PLAN.md
+ARCHITECTURE.md
 RC_00_BASELINE_COPY.md
 RC_01_ARCHITECTURE_AND_CONTRACTS.md
 RC_02_PYTHON_DEPENDENCIES.md
 RC_03_DJANGO_CELERY_INTEGRATION.md
 RC_04_ASYNC_TASK_API.md
+RC_05_REDIS_ROLE.md
 ```
 
 Étapes réalisées :
@@ -149,6 +150,7 @@ RC-01  Architecture et contrats           ✅
 RC-02  Dépendances Python                 ✅
 RC-03  Intégration Celery dans Django     ✅
 RC-04  Tâches + API asynchrone            ✅
+RC-05  rôle Ansible Redis                 ✅ IMPLEMENTED
 ```
 
-Le prochain jalon est **RC-05 — rôle Ansible Redis**.
+Le prochain jalon est **RC-06 — rôle Ansible Celery Worker**.
