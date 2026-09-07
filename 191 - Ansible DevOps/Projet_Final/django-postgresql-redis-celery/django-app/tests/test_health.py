@@ -40,7 +40,57 @@ class HealthEndpointTests(SimpleTestCase):
             {"status": "unhealthy", "database": "disconnected"},
         )
 
+    @patch("health.views.redis_client.from_url")
+    def test_redis_health_success(self, redis_from_url):
+        client = MagicMock()
+        client.ping.return_value = True
+        redis_from_url.return_value = client
+
+        response = self.client.get("/health/redis/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"status": "healthy", "redis": "connected"},
+        )
+        client.ping.assert_called_once_with()
+        client.close.assert_called_once_with()
+
+    @patch("health.views.redis_client.from_url", side_effect=RuntimeError("redis unavailable"))
+    def test_redis_health_failure(self, _redis_from_url):
+        response = self.client.get("/health/redis/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(),
+            {"status": "unhealthy", "redis": "disconnected"},
+        )
+
+    @patch("health.views.celery_app.control.ping")
+    def test_celery_health_success(self, celery_ping):
+        celery_ping.return_value = [{"worker1@example": {"ok": "pong"}}]
+
+        response = self.client.get("/health/celery/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"status": "healthy", "celery": "connected", "workers": 1},
+        )
+
+    @patch("health.views.celery_app.control.ping", return_value=[])
+    def test_celery_health_failure(self, _celery_ping):
+        response = self.client.get("/health/celery/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(),
+            {"status": "unhealthy", "celery": "unavailable", "workers": 0},
+        )
+
     def test_info(self):
         response = self.client.get("/api/info/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["database"], "postgresql")
+        payload = response.json()
+        self.assertEqual(payload["database"], "postgresql")
+        self.assertEqual(payload["broker"], "redis")
+        self.assertEqual(payload["async_runtime"], "celery")
+        self.assertEqual(payload["scheduler"], "django-celery-beat")
