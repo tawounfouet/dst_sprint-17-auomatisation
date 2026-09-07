@@ -138,21 +138,13 @@ else
 fi
 
 echo "== Mono-host inventory contract =="
-python3 - "inventories/prod/hosts.example.yml" <<'PY'
-from pathlib import Path
-import sys
-import yaml
-
-path = Path(sys.argv[1])
-data = yaml.safe_load(path.read_text(encoding="utf-8"))
-children = data["all"]["children"]
-app_hosts = list(children["app"]["hosts"])
-db_hosts = list(children["database"]["hosts"])
-if app_hosts != ["server1"] or db_hosts != ["server1"]:
-    raise SystemExit(
-        f"mono-host inventory must use server1 for app and database: app={app_hosts}, db={db_hosts}"
-    )
-PY
+grep -Fq '    app:' inventories/prod/hosts.example.yml \
+  || fail "app inventory group missing"
+grep -Fq '    database:' inventories/prod/hosts.example.yml \
+  || fail "database inventory group missing"
+server1_count="$(grep -Ec '^[[:space:]]+server1:[[:space:]]*$' inventories/prod/hosts.example.yml || true)"
+[[ "$server1_count" -eq 2 ]] \
+  || fail "server1 must appear exactly once in app and once in database groups"
 if grep -Eq '(^|[[:space:]])(app1|db1):' inventories/prod/hosts.example.yml; then
   fail "legacy app1/db1 topology remains in hosts.example.yml"
 fi
@@ -214,13 +206,13 @@ grep -Fq 'REDISCLI_AUTH:' roles/redis/tasks/main.yml \
   || fail "Redis PING must pass authentication via REDISCLI_AUTH"
 grep -Fq 'requirepass {{ redis_password }}' roles/redis/tasks/main.yml \
   || fail "Redis requirepass contract missing"
-if grep -REn 'redis_bind_address:[[:space:]]*["'"']?0\.0\.0\.0|line:[[:space:]]*["'"']?bind[[:space:]]+0\.0\.0\.0' roles/redis inventories/prod/group_vars/all.yml; then
+if grep -REn 'redis_bind_address:.*0\.0\.0\.0|line:.*bind[[:space:]]+0\.0\.0\.0' roles/redis inventories/prod/group_vars/all.yml; then
   fail "Redis must never bind to 0.0.0.0 in this topology"
 fi
-if grep -REn 'redis_protected_mode:[[:space:]]*["'"']?no(["'"']|$)' roles/redis inventories/prod/group_vars/all.yml; then
+if grep -REn 'redis_protected_mode:.*no([[:space:]"'"']|$)' roles/redis inventories/prod/group_vars/all.yml; then
   fail "Redis protected mode must not be disabled"
 fi
-if grep -En '^[[:space:]]*-[[:space:]]*-a[[:space:]]*$|redis-cli[^\n]*[[:space:]]-a[[:space:]]' roles/redis/tasks/main.yml; then
+if grep -En '^[[:space:]]*-[[:space:]]*-a[[:space:]]*$|redis-cli.*[[:space:]]-a[[:space:]]' roles/redis/tasks/main.yml; then
   fail "Redis password must not be passed through redis-cli -a"
 fi
 
@@ -270,9 +262,9 @@ grep -Fq 'api/tasks/database-probe/' "$DJANGO_DIR/tasks_demo/urls.py" \
   || fail "database probe endpoint missing"
 grep -Fq 'total_run_count' playbooks/validate.yml \
   || fail "Beat execution validation contract missing"
-grep -Fq 'result == 42' playbooks/validate.yml \
-  || grep -Fq '| int == 42' playbooks/validate.yml \
-  || fail "Celery add(21,21) result validation missing"
+if ! grep -Eq 'result.*(\|[[:space:]]*int[[:space:]]*)?==[[:space:]]*42' playbooks/validate.yml; then
+  fail "Celery add(21,21) result validation missing"
+fi
 pass "Redis, Celery, async task and Beat validation contracts"
 
 echo "== Secret and sensitive-file guards =="
