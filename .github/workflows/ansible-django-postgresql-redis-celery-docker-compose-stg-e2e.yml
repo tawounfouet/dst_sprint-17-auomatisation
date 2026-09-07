@@ -1,0 +1,65 @@
+name: Ansible Django PostgreSQL Redis Celery Compose STG-like E2E
+
+on:
+  push:
+    branches:
+      - feat/ansible-django-postgresql-redis-celery-docker-compose
+    paths:
+      - "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/**"
+      - ".github/workflows/ansible-django-postgresql-redis-celery-docker-compose-stg-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dc13-stg-like-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Show runtime tool versions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python --version
+          docker --version
+          docker compose version
+
+      - name: Prepare isolated host port contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo systemctl stop postgresql.service 2>/dev/null || true
+          sudo systemctl stop redis-server.service 2>/dev/null || true
+          sudo systemctl stop nginx.service 2>/dev/null || true
+
+      - name: Build and promote immutable STG image artifact
+        working-directory: "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/ansible-project"
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chmod +x tests/e2e/prepare_stg_immutable_image.sh
+          immutable_ref="$(./tests/e2e/prepare_stg_immutable_image.sh)"
+          if ! [[ "$immutable_ref" =~ @sha256:[0-9a-f]{64}$ ]]; then
+            echo "DC13_ARTIFACT_FAIL: helper did not return a digest reference" >&2
+            exit 1
+          fi
+          echo "APP_IMAGE=$immutable_ref" >> "$GITHUB_ENV"
+          echo "DC13_ARTIFACT_PASS: immutable image prepared before STG Compose deployment"
+
+      - name: Run DC-13 STG-like E2E
+        working-directory: "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/ansible-project"
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chmod +x tests/e2e/run_stg_like_e2e.sh tests/e2e/validate_stg_like_e2e.py
+          ./tests/e2e/run_stg_like_e2e.sh
