@@ -96,12 +96,23 @@ wait_healthy() {
 assert_no_published_port() {
   local service="$1"
   local port="$2"
-  local mapping
-  mapping="$("${COMPOSE[@]}" port "$service" "$port" 2>/dev/null || true)"
-  if [[ -n "$mapping" ]]; then
-    echo "DC12_NETWORK_FAIL: $service:$port unexpectedly published as $mapping" >&2
-    return 1
-  fi
+  local cid bindings
+  cid="$("${COMPOSE[@]}" ps -q "$service")"
+  [[ -n "$cid" ]]
+  bindings="$(docker inspect --format '{{json .HostConfig.PortBindings}}' "$cid")"
+  python3 - "$service" "$port" "$bindings" <<'PY'
+import json
+import sys
+
+service = sys.argv[1]
+port = sys.argv[2]
+bindings = json.loads(sys.argv[3]) or {}
+key = f"{port}/tcp"
+if bindings.get(key):
+    raise SystemExit(
+        f"DC12_NETWORK_FAIL: {service}:{port} has Docker host bindings"
+    )
+PY
   echo "DC12_NETWORK_PASS: $service:$port published=false"
 }
 
