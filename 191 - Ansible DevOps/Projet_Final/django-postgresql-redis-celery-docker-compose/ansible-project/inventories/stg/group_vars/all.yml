@@ -17,7 +17,7 @@ compose_stack_runtime_environment:
   DJANGO_SETTINGS_MODULE: config.settings.stg
   DJANGO_SECRET_KEY: "{{ vault_django_secret_key }}"
   DJANGO_DEBUG: "false"
-  DJANGO_ALLOWED_HOSTS: stg.example.com,web,nginx
+  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,stg.example.com,web,nginx
   DJANGO_CSRF_TRUSTED_ORIGINS: https://stg.example.com
   DATABASE_URL: "postgresql://{{ postgresql_user | urlencode }}:{{ vault_postgresql_password | urlencode }}@db:5432/{{ postgresql_database | urlencode }}"
   CELERY_BROKER_URL: "redis://:{{ vault_redis_password | urlencode }}@redis:6379/{{ redis_broker_database }}"

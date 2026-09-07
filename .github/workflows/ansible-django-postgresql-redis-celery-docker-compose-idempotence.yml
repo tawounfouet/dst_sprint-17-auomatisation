@@ -1,0 +1,61 @@
+name: Ansible Django PostgreSQL Redis Celery Compose Strict Idempotence
+
+on:
+  push:
+    branches:
+      - feat/ansible-django-postgresql-redis-celery-docker-compose
+    paths:
+      - "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/**"
+      - ".github/workflows/ansible-django-postgresql-redis-celery-docker-compose-idempotence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dc14-strict-idempotence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      DC14_ALLOW_EPHEMERAL_HOST: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "ansible-core>=2.18,<2.21" PyYAML
+
+      - name: Install Ansible collections
+        working-directory: "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/ansible-project"
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ansible-galaxy collection install -r requirements.yml
+
+      - name: Show qualification tool versions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python --version
+          ansible-playbook --version | head -n 2
+          docker --version
+          docker compose version
+          dockerd --version || true
+
+      - name: Run DC-14 strict idempotence qualification
+        working-directory: "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/ansible-project"
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chmod +x tests/idempotence/run_strict_idempotence.sh tests/e2e/prepare_stg_immutable_image.sh tests/e2e/validate_stg_like_e2e.py
+          ./tests/idempotence/run_strict_idempotence.sh
