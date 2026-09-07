@@ -20,3 +20,11 @@ DEBUG = env.bool("DJANGO_DEBUG", default=True)
 DATABASES = development_database(env=env, base_dir=BASE_DIR)
 
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+        "rest_framework.renderers.BrowsableAPIRenderer",
+    ],
+}
