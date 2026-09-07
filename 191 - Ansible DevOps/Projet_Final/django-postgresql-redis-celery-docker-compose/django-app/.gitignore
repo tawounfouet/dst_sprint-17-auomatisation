@@ -3,5 +3,8 @@ __pycache__/
 *.py[cod]
 .env
 .env.*
+!.env.dev.example
+!.env.stg.example
+!.env.prod.example
 staticfiles/
 *.sqlite3

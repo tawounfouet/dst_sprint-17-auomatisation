@@ -1,6 +1,6 @@
 # Projet Ansible — Django/DRF + PostgreSQL + Redis + Celery + Docker Compose
 
-Nouvelle variante dérivée du projet qualifié `django-postgresql-redis-celery/` afin de migrer l'exécution applicative vers **Docker Engine + Docker Compose**, tout en conservant **Ansible comme plan de contrôle et d'automatisation du serveur**.
+Variante dérivée du projet qualifié `django-postgresql-redis-celery/` afin de migrer l'exécution vers **Docker Engine + Docker Compose**, tout en conservant **Ansible comme plan de contrôle**.
 
 ## Source de la copie
 
@@ -10,101 +10,132 @@ source branch : feat/ansible-django-postgresql-redis-celery
 source HEAD   : 0b33d1ea230b47492720127b2dcf837899da851d
 ```
 
-Les preuves RC-10 à RC-13 copiées depuis la baseline sont **historiques uniquement**. Elles qualifient la variante systemd/native précédente, pas cette nouvelle variante Docker Compose.
+Les preuves RC-10 à RC-13 de la baseline restent historiques uniquement et ne qualifient pas cette variante Docker Compose.
 
 ## Statut
 
 ```text
-BASELINE COPIED              ✅
-TARGET ARCHITECTURE          ✅ DESIGN
-DOCKERFILE                   ⏳
-DOCKER COMPOSE               ⏳
-DJANGO REST FRAMEWORK        ⏳
-ANSIBLE DOCKER ENGINE        ⏳
-ANSIBLE COMPOSE DEPLOY       ⏳
-SECRETS / ENV INJECTION      ⏳
-HEALTHCHECKS / PERSISTENCE   ⏳
-STATIC GATE                  ⏳
-COMPOSE E2E                  ⏳
-STRICT IDEMPOTENCE           ⏳
-PACKAGE + SHA-256            ⏳
-FINAL REPORT                 ⏳
+BASELINE COPIED                 ✅
+TARGET ARCHITECTURE             ✅ DESIGN
+DJANGO CONFIG FOUNDATION        ✅ IMPLEMENTED
+DJANGO-ENVIRON                  ✅ IMPLEMENTED
+MULTI-ENV DEV/STG/PROD          ✅ IMPLEMENTED
+SQLITE DEV-ONLY POLICY          ✅ IMPLEMENTED
+DJANGO REST FRAMEWORK           ⏳
+12-FACTOR DOCKER IMAGE          ⏳
+DOCKER COMPOSE                  ⏳
+ANSIBLE DOCKER ENGINE           ⏳
+ANSIBLE COMPOSE DEPLOY          ⏳
+SECRETS / ENV INJECTION         ⏳
+HEALTHCHECKS / PERSISTENCE      ⏳
+STATIC GATE                     ⏳
+COMPOSE E2E                     ⏳
+STRICT IDEMPOTENCE              ⏳
+PACKAGE + SHA-256               ⏳
+FINAL REPORT                    ⏳
+```
+
+## Configuration Django
+
+La configuration est désormais structurée ainsi :
+
+```text
+django-app/config/settings/
+├── __init__.py
+├── base.py
+├── database.py
+├── dev.py
+├── stg.py
+└── prod.py
+```
+
+Sélection explicite :
+
+```text
+DJANGO_SETTINGS_MODULE=config.settings.dev
+DJANGO_SETTINGS_MODULE=config.settings.stg
+DJANGO_SETTINGS_MODULE=config.settings.prod
+```
+
+`django-environ` lit et caste la configuration. Ansible Vault restera la source des secrets pour les environnements gérés.
+
+## Politique base de données
+
+```text
+DEV + DATABASE_URL absente      → SQLite ✅
+DEV + PostgreSQL URL            → PostgreSQL ✅
+DEV + SQLite URL explicite      → FAIL ❌
+STG + DATABASE_URL absente      → FAIL ❌
+STG + SQLite                    → FAIL ❌
+PROD + DATABASE_URL absente     → FAIL ❌
+PROD + SQLite                   → FAIL ❌
+STG/PROD + PostgreSQL           → PostgreSQL ✅
+```
+
+Aucun fallback sur erreur de connexion PostgreSQL n'est autorisé.
+
+Deux modes DEV sont donc prévus :
+
+```text
+DEV Lite  → Django local + SQLite
+DEV Full  → Docker Compose + PostgreSQL + Redis + Celery + Beat + Nginx
 ```
 
 ## Architecture cible
 
 ```text
-Ansible control
-      │
-      │ SSH / CI transport
-      ▼
-┌─────────────────────────────────────────────────────────────┐
-│ server1 — Ubuntu 24.04                                    │
-│                                                            │
-│ Docker Engine + Docker Compose                             │
-│                                                            │
-│  ┌─────────┐        ┌──────────────────────────────┐       │
-│  │ nginx   │───────►│ web                          │       │
-│  │ :80     │        │ Django/DRF + Gunicorn :8000 │       │
-│  └─────────┘        └──────────────┬───────────────┘       │
-│       ▲                            │                       │
-│       │                            ├────────► db            │
-│    public                          │          PostgreSQL     │
-│                                    │          :5432 internal │
-│                                    │                       │
-│                                    └────────► redis         │
-│                                               :6379 internal │
-│                                                  ▲          │
-│                                      ┌───────────┴────────┐ │
-│                                      │                    │ │
-│                                   worker                beat│
-│                                Celery Worker       Celery Beat│
-│                                      │                    │ │
-│                                      └── same app image ──┘ │
-└─────────────────────────────────────────────────────────────┘
+                    Nginx :80/:443
+                         │
+                         ▼
+                 web — Django/DRF
+                    Gunicorn :8000
+                     ┌────┴────┐
+                     ▼         ▼
+                    db       redis
+               PostgreSQL   Redis + auth
+                     ▲         ▲
+                     │         │
+                   worker     beat
+                   Celery   Celery Beat
 ```
 
-## Services Compose cibles
+Les services Compose cibles sont :
 
 ```text
-nginx   reverse proxy, seul service publié sur l'hôte
-web     Django/DRF + Gunicorn
- db     PostgreSQL
-redis   broker + result backend avec authentification
-worker  Celery Worker, même image applicative que web
-beat    Celery Beat + django-celery-beat, même image que web
+nginx
+web
+db
+redis
+worker
+beat
 ```
 
-## Contrat réseau
+`web`, `worker` et `beat` utiliseront la même image applicative.
 
-Le passage en conteneurs change le sens de « localhost-only ».
-
-Dans la variante native, Gunicorn, PostgreSQL et Redis écoutaient sur `127.0.0.1` du serveur. Dans Compose, les services doivent communiquer via le réseau Docker et les noms DNS de services :
+## Contrat réseau cible
 
 ```text
+nginx  → web:8000
 web    → db:5432
 web    → redis:6379
 worker → db:5432
 worker → redis:6379
 beat   → db:5432
 beat   → redis:6379
-nginx  → web:8000
 ```
 
-Gunicorn écoutera donc sur `0.0.0.0:8000` **dans le conteneur web**, mais le port `8000` ne sera pas publié sur l'hôte.
-
-Contrat côté hôte :
+Côté hôte :
 
 ```text
-80    published=true
-8000  published=false
-5432  published=false
-6379  published=false
+80/443 published=true
+8000   published=false
+5432   published=false
+6379   published=false
 ```
 
 ## Ansible reste le plan de contrôle
 
-La cible n'est pas de remplacer Ansible par Compose. Ansible doit préparer et converger l'hôte :
+La cible active deviendra :
 
 ```text
 common
@@ -114,31 +145,28 @@ docker_engine
 compose_stack
 ```
 
-Le déploiement final devra utiliser `community.docker.docker_compose_v2` plutôt que lancer en parallèle les anciens rôles systemd `postgresql`, `redis`, `django_app`, `celery`, `celery_beat` et `nginx`.
+Les anciens rôles systemd restent dans la copie comme référence de migration mais ne devront pas être exécutés en parallèle avec la stack Compose finale.
 
-Ces anciens rôles sont conservés dans la copie comme référence de migration tant que le portage Compose n'est pas terminé.
-
-## Django REST Framework
-
-La baseline expose déjà des endpoints JSON Django. Cette variante ajoutera explicitement **Django REST Framework** afin que l'API asynchrone soit portée par DRF et non uniquement par des vues JSON manuelles.
-
-## Roadmap Docker Compose
+## Roadmap canonique
 
 ```text
-DC-00  Copie contrôlée de la baseline                 ✅
-DC-01  Architecture Docker/Compose et contrats         ✅ DESIGN
-DC-02  Dockerfile + .dockerignore + image non-root     ⏳
-DC-03  Compose web/db/redis/worker/beat/nginx          ⏳
-DC-04  Django REST Framework                           ⏳
-DC-05  Rôle Ansible docker_engine                      ⏳
-DC-06  Rôle Ansible compose_stack                      ⏳
-DC-07  Vault → environnement/secrets Compose           ⏳
-DC-08  Healthchecks + volumes + isolation réseau       ⏳
-DC-09  Static gate                                     ⏳
-DC-10  Première qualification E2E Compose              ⏳
-DC-11  Idempotence stricte Ansible + stabilité Compose ⏳
-DC-12  ZIP + SHA-256 + artifact GitHub Actions         ⏳
-DC-13  Rapport final                                   ⏳
+DC-00  Controlled baseline copy                                  ✅
+DC-01  Docker/Compose architecture contracts                      ✅ DESIGN
+DC-02  Django configuration foundation                            ✅ IMPLEMENTED
+DC-03  Django REST Framework                                      ⏭ NEXT
+DC-04  12-Factor Docker image                                     ⏳
+DC-05  Base Docker Compose stack                                  ⏳
+DC-06  Multi-environment Compose                                  ⏳
+DC-07  Ansible docker_engine                                      ⏳
+DC-08  Ansible compose_stack + inventories dev/stg/prod           ⏳
+DC-09  Secure runtime configuration                               ⏳
+DC-10  Runtime hardening                                          ⏳
+DC-11  Unit tests + static gate                                   ⏳
+DC-12  DEV Full E2E                                               ⏳
+DC-13  STG-like E2E + anti-SQLite tests                           ⏳
+DC-14  Strict idempotence                                         ⏳
+DC-15  Package + SHA-256 + artifact                               ⏳
+DC-16  Final qualification report + 12-Factor matrix              ⏳
 ```
 
-Le plan détaillé est dans `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md` et le fork contrôlé dans `DC_00_BASELINE_COPY.md`.
+Le plan canonique complet est `DOCKER_COMPOSE_IMPLEMENTATION_PLAN.md`. Le jalon courant est documenté dans `DC_02_DJANGO_CONFIGURATION_FOUNDATION.md`.
