@@ -15,7 +15,7 @@ CELERY WORKER            ✅ IMPLEMENTED
 DJANGO CELERY BEAT       ✅ IMPLEMENTED
 GLOBAL ORCHESTRATION     ✅ IMPLEMENTED
 RUNTIME VALIDATION       ✅ IMPLEMENTED
-STATIC GATE              ⏳
+STATIC GATE              ✅ IMPLEMENTED
 E2E QUALIFICATION        ⏳
 IDEMPOTENCE              ⏳
 PACKAGE / ARTIFACT       ⏳
@@ -51,7 +51,7 @@ Contrat réseau :
 6379  → localhost-only
 ```
 
-## Orchestration — RC-07
+## Orchestration
 
 Le `site.yml` orchestre les sept rôles :
 
@@ -63,61 +63,48 @@ La topologie canonique est mono-host : le même `server1` appartient aux groupes
 
 ## Runtime validation — RC-08
 
-Le contrat de validation couvre désormais les services :
+Le contrat de validation couvre :
 
 ```text
-postgresql
-redis-server
-datascientest-django
-datascientest-celery
-datascientest-celery-beat
-nginx
-```
-
-et ne s'arrête pas à `systemctl is-active`.
-
-Les contrôles prévus incluent :
-
-```text
-PostgreSQL 127.0.0.1:5432 + DB/role
-Redis 127.0.0.1:6379 + PING authentifié → PONG
-Gunicorn 127.0.0.1:8000
-nginx -t + HTTP :80
+PostgreSQL service + DB + role
+Redis service + PING authentifié
+Gunicorn
+Celery Worker + control ping
+Celery Beat + PeriodicTask réellement déclenchée
+Nginx + nginx -t
 GET /health/
-GET /health/database/   → SELECT 1
-GET /health/redis/      → Redis PING réel
-GET /health/celery/     → Celery control ping avec >= 1 worker
+GET /health/database/
+GET /health/redis/
+GET /health/celery/
+add(21,21) → 42
+database_probe() → SELECT 1
 ```
 
-Deux vrais scénarios asynchrones sont définis dans `validate.yml` :
+RC-08 reste un contrat implémenté ; sa preuve runtime réelle sera produite par GitHub Actions.
+
+## Static gate — RC-09
+
+`ansible-project/tests/static_checks.sh` contrôle désormais :
 
 ```text
-POST /api/tasks/add/ {21,21}
-→ Redis broker
-→ Celery Worker
-→ Redis result backend
-→ SUCCESS / 42
+structure des 7 rôles
+scaffold Django/Celery/Beat
+dépendances Python
+syntaxe Bash / Python / YAML
+inventaire mono-host server1
+ordre d'orchestration
+stdlib .venv
+PostgreSQL SCRAM + localhost-only
+Redis localhost-only + protected-mode + auth
+Celery Worker depuis .venv
+Beat séparé avec DatabaseScheduler
+endpoints health Redis/Celery
+scénarios add/database_probe/Beat dans validate.yml
+absence de fichiers runtime sensibles versionnés
+ansible-playbook --syntax-check lorsque disponible
 ```
 
-et :
-
-```text
-POST /api/tasks/database-probe/
-→ Redis
-→ Celery Worker
-→ Django
-→ PostgreSQL
-→ SELECT 1
-→ SUCCESS
-```
-
-La validation attend aussi que `django-celery-beat` ait réellement déclenché la tâche `datascientest-demo-heartbeat` au moins une fois via :
-
-```text
-total_run_count >= 1
-```
-
-> RC-08 est implémenté mais pas encore qualifié sur le nouveau harness GitHub Actions. Aucun statut GREEN runtime n'est revendiqué à ce stade.
+Le Vault factice utilisé uniquement pour le syntax-check statique contient maintenant les trois variables requises : PostgreSQL, Django et Redis.
 
 ## Composants applicatifs
 
@@ -160,13 +147,13 @@ RC-01   Architecture et contrats           ✅
 RC-02   Dépendances Python                 ✅
 RC-03   Intégration Celery dans Django     ✅
 RC-04   Tâches + API asynchrone            ✅
-RC-05   rôle Redis                         ✅ IMPLEMENTED
-RC-06   rôle Celery Worker                 ✅ IMPLEMENTED
-RC-06B  Django Celery Beat                 ✅ IMPLEMENTED
-RC-07   orchestration globale              ✅ IMPLEMENTED
-RC-08   runtime validation                 ✅ IMPLEMENTED
-RC-09   static gate                        ⏭ NEXT
-RC-10   qualification E2E                  ⏳
+RC-05   rôle Redis                         ✅
+RC-06   rôle Celery Worker                 ✅
+RC-06B  Django Celery Beat                 ✅
+RC-07   orchestration globale              ✅
+RC-08   runtime validation                 ✅
+RC-09   static gate                        ✅ IMPLEMENTED
+RC-10   qualification E2E                  ⏭ NEXT
 RC-11   idempotence                        ⏳
 RC-12   packaging + artifact               ⏳
 RC-13   rapport final                      ⏳
