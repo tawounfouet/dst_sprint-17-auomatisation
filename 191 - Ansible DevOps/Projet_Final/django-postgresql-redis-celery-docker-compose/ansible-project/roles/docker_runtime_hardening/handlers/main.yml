@@ -1,0 +1,6 @@
+---
+- name: Restart Docker daemon for hardened configuration
+  ansible.builtin.systemd:
+    name: "{{ docker_runtime_hardening_docker_service_name }}"
+    state: restarted
+    enabled: true

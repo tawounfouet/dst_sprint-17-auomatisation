@@ -1,0 +1,11 @@
+---
+- name: Apply and validate Docker runtime hardening
+  hosts: app
+  become: true
+  gather_facts: true
+  roles:
+    - role: docker_runtime_hardening
+      tags:
+        - docker
+        - hardening
+        - runtime_hardening

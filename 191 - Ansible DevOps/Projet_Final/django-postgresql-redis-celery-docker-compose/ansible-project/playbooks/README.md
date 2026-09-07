@@ -1,8 +1,8 @@
 # Playbooks — Variante Docker Compose
 
-## `site.yml` — orchestration active DC-08
+## `site.yml` — orchestration active DC-10
 
-Le point d'entrée actif de la variante Docker Compose est désormais :
+Le point d'entrée actif est désormais :
 
 ```text
 Topology validation
@@ -10,6 +10,8 @@ Topology validation
 common
         ↓
 docker_engine
+        ↓
+docker_runtime_hardening
         ↓
 compose_stack
 ```
@@ -47,9 +49,19 @@ ansible-playbook -i inventories/stg/hosts.yml playbooks/site.yml --ask-vault-pas
 ansible-playbook -i inventories/prod/hosts.yml playbooks/site.yml --ask-vault-pass
 ```
 
+## Playbooks spécialisés
+
+```text
+playbooks/docker_engine.yml      → Docker Engine + Compose v2
+playbooks/runtime_hardening.yml  → daemon hardening + DOCKER-USER policy
+playbooks/site.yml               → convergence complète
+```
+
+`runtime_hardening.yml` suppose que Docker Engine est déjà installé.
+
 ## Sélection Compose
 
-`deployment_environment` est fourni par l'inventory. Le rôle `compose_stack` sélectionne alors exactement :
+`deployment_environment` est fourni par l'inventory. Le rôle `compose_stack` sélectionne exactement :
 
 ```text
 dev  → compose.yml + compose.dev.yml
@@ -59,7 +71,7 @@ prod → compose.yml + compose.prod.yml
 
 En STG/PROD, `APP_IMAGE` doit être une référence immuable `@sha256:<64 hex>`.
 
-## Runtime environment
+## Secure runtime
 
 Le fichier distant :
 
@@ -67,10 +79,26 @@ Le fichier distant :
 /opt/datascientest-compose/docker/.env.runtime
 ```
 
-est rendu en mode `0600` depuis les variables d'inventory/Vault avec `no_log: true`. DC-09 renforcera encore la gestion, la rotation et les gates de secrets.
+est rendu `root:root` / `0600` depuis l'inventory/Vault avec `no_log: true`.
+
+## Hardening hôte
+
+DC-10 gère :
+
+```text
+/etc/docker/daemon.json
+live-restore
+rotation json-file
+firewall-backend=iptables
+DOCKER-USER → DST-COMPOSE-GUARD
+```
+
+Le drop-in systemd Docker réapplique la politique firewall après chaque restart du daemon.
 
 ## Validation actuelle
 
-Le rôle exécute `docker compose config --quiet`, puis `community.docker.docker_compose_v2` avec `wait=true`. Les preuves CI/E2E et l'idempotence stricte restent à qualifier dans les jalons ultérieurs.
+`compose_stack` exécute `docker compose config --quiet` avant convergence. Le rôle `docker_runtime_hardening` valide la configuration `dockerd`, `live-restore` et la présence du jump `DOCKER-USER`.
 
-`playbooks/validate.yml` est encore issu de la baseline native et sera remplacé par la validation Compose dans DC-10/DC-12 ; il ne doit pas être utilisé comme preuve de cette variante.
+Ces contrôles sont implémentés mais ne constituent pas encore une preuve CI/E2E GREEN tant qu'ils n'ont pas été observés dans DC-11/DC-12/DC-13.
+
+`playbooks/validate.yml` est encore issu de la baseline native et sera remplacé par la validation Compose E2E ; il ne doit pas être utilisé comme preuve de cette variante.

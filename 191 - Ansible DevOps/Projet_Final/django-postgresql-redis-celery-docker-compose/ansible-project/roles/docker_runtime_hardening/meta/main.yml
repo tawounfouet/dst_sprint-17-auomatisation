@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  role_name: docker_runtime_hardening
+  author: Thomas AWOUNFOUET
+  description: Harden Docker daemon defaults, Compose runtime boundaries and DOCKER-USER firewall policy.
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+
+dependencies: []

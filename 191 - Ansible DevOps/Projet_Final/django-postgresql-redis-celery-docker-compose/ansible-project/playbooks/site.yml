@@ -75,6 +75,12 @@
         - docker
         - docker_engine
 
+    - role: docker_runtime_hardening
+      tags:
+        - docker
+        - hardening
+        - runtime_hardening
+
     - role: compose_stack
       tags:
         - compose

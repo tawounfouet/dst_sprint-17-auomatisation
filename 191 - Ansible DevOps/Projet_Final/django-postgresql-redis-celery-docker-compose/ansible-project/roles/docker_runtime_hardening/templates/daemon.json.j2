@@ -1,0 +1,11 @@
+{
+  "live-restore": {{ docker_runtime_hardening_live_restore | bool | lower }},
+  "log-driver": "{{ docker_runtime_hardening_log_driver }}",
+  "log-opts": {
+    "max-size": "{{ docker_runtime_hardening_log_max_size }}",
+    "max-file": "{{ docker_runtime_hardening_log_max_file }}"
+  },
+  "iptables": true,
+  "ip6tables": true,
+  "firewall-backend": "{{ docker_runtime_hardening_firewall_backend }}"
+}

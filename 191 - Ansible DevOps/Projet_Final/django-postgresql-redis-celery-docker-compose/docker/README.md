@@ -1,6 +1,6 @@
 # Docker Compose — Multi-Environment Stack
 
-Le dossier `docker/` porte désormais un fichier de base commun et trois overlays explicites :
+Le dossier `docker/` porte un fichier de base commun et trois overlays explicites :
 
 ```text
 docker/
@@ -14,127 +14,107 @@ docker/
     └── entrypoint.sh
 ```
 
-## Principe
+## Topologie
 
-`compose.yml` contient la topologie commune : `nginx`, `web`, `db`, `redis`, `worker`, `beat`, volumes, réseau privé, healthchecks et dépendances.
-
-Il ne publie désormais **aucun port hôte** et ne contient plus de `build:` applicatif. La politique de build, d'image et de publication est portée par l'overlay sélectionné.
-
-## DEV Full
-
-```bash
-docker compose \
-  -f compose.yml \
-  -f compose.dev.yml \
-  up --build -d
-```
-
-Contrat :
+`compose.yml` contient les six services : `nginx`, `web`, `db`, `redis`, `worker`, `beat`.
 
 ```text
-APPLICATION_ENV=dev
-DJANGO_SETTINGS_MODULE=config.settings.dev
-DATABASE_URL obligatoire → PostgreSQL
-SQLite interdit dans ce mode
-image applicative construite localement
-Nginx publié uniquement sur 127.0.0.1:8080 par défaut
-aucun port 8000/5432/6379 publié
+Internet
+   │
+   ▼
+nginx
+   │ frontend
+   ▼
+web
+   │ backend (internal)
+   ├────────► db
+   └────────► redis
+                ▲
+          worker / beat
 ```
 
-Le fallback SQLite reste réservé au **DEV Lite hors stack Compose**, lorsque `DATABASE_URL` est volontairement absente.
+`nginx` n'est pas membre du réseau `backend`; `db`, `redis`, `worker` et `beat` ne sont pas membres du réseau `frontend`. Le réseau `backend` est `internal: true`.
 
-## STG
-
-```bash
-docker compose \
-  -f compose.yml \
-  -f compose.stg.yml \
-  up -d
-```
-
-Contrat :
+## Publication des ports
 
 ```text
-APPLICATION_ENV=stg
-DJANGO_SETTINGS_MODULE=config.settings.stg
-DJANGO_DEBUG=false
-DATABASE_URL obligatoire et PostgreSQL-only via les settings Django
-APP_IMAGE obligatoire
-aucun build applicatif depuis les sources
-aucun bind mount du code
-aucun port 8000/5432/6379 publié
+DEV Full : 127.0.0.1:8080 → nginx:80 par défaut
+STG/PROD: 0.0.0.0:80       → nginx:80 par défaut
+
+8000 Gunicorn   → jamais publié
+5432 PostgreSQL → jamais publié
+6379 Redis      → jamais publié
 ```
 
-`APP_IMAGE` doit être fourni sous forme de référence immuable, idéalement :
+## Hardening des process
+
+`web`, `worker` et `beat` :
 
 ```text
-registry.example.com/datascientest-django@sha256:<digest>
+image non-root
+read_only root filesystem
+no-new-privileges
+cap_drop ALL
+tmpfs /tmp
+init=true
+SIGTERM + stop_grace_period
+CPU/RAM/PID limits
+rotated json-file logs
 ```
 
-## PROD
+Redis : utilisateur `redis`, rootfs read-only, `cap_drop ALL`, `no-new-privileges`, tmpfs runtime, volume `/data` writable.
 
-```bash
-docker compose \
-  -f compose.yml \
-  -f compose.prod.yml \
-  up -d
-```
+Nginx : rootfs read-only, tmpfs runtime, `cap_drop ALL` puis ajout uniquement de `CHOWN`, `DAC_OVERRIDE`, `NET_BIND_SERVICE`, `SETGID`, `SETUID` pour rester compatible avec l'image officielle.
 
-Le contrat PROD est le même que STG pour l'artefact applicatif, avec :
+PostgreSQL : `no-new-privileges`, tmpfs `/tmp` et `/var/run/postgresql`, `shm_size`, limites CPU/RAM/PIDs et rotation des logs. Le rootfs reste writable comme exception explicite jusqu'à qualification d'un mode read-only compatible avec l'initialisation officielle.
+
+## Healthchecks
 
 ```text
-APPLICATION_ENV=prod
-DJANGO_SETTINGS_MODULE=config.settings.prod
-DJANGO_DEBUG=false
+db     → pg_isready
+redis  → PING authentifié
+web    → /health/ + /health/database/ + /health/redis/
+worker → celery inspect ping
+beat   → process Beat + PeriodicTask DB présente
+nginx  → reverse proxy /health/database/
 ```
 
-Le déploiement PROD doit réutiliser **exactement le même `APP_IMAGE` / digest que celui qualifié en STG**.
+La preuve fonctionnelle complète de Beat restera l'observation d'une tâche périodique réellement déclenchée et consommée.
 
-## Promotion d'image
+## Logging
 
-La cible de release est :
+Tous les services utilisent `json-file` avec rotation :
 
 ```text
-CI build
-   ↓
-APP_IMAGE=registry/...@sha256:ABC
-   ↓
-STG qualifie sha256:ABC
-   ↓
-PROD déploie sha256:ABC
+max-size=${DOCKER_LOG_MAX_SIZE:-10m}
+max-file=${DOCKER_LOG_MAX_FILE:-3}
 ```
 
-STG et PROD ne doivent pas rebuild l'application. Les futurs rôles Ansible vérifieront que la référence fournie respecte le contrat de promotion.
+Django, Gunicorn et Celery continuent d'écrire sur stdout/stderr.
 
-## Réseau
+## Ressources
 
-Le service discovery reste interne à Compose :
+Les limites sont surchargeables sans rebuild via :
 
 ```text
-nginx  → web:8000
-web    → db:5432
-web    → redis:6379
-worker → db:5432
-worker → redis:6379
-beat   → db:5432
-beat   → redis:6379
+POSTGRES_*_LIMIT / POSTGRES_CPUS
+REDIS_*_LIMIT    / REDIS_CPUS
+WEB_*_LIMIT      / WEB_CPUS
+WORKER_*_LIMIT   / WORKER_CPUS
+BEAT_*_LIMIT     / BEAT_CPUS
+NGINX_*_LIMIT    / NGINX_CPUS
 ```
 
-Publication hôte :
+## Firewall hôte
 
-```text
-DEV Full : nginx → 127.0.0.1:8080 par défaut
-STG/PROD: nginx → :80 par défaut
+Compose fournit la première barrière en ne publiant que Nginx. Le rôle Ansible `docker_runtime_hardening` fournit une défense supplémentaire : Docker reste en backend `iptables`, et `DOCKER-USER` saute vers `DST-COMPOSE-GUARD` pour autoriser uniquement les destinations publiques prévues puis bloquer le reste du forwarding Docker entrant sur l'interface externe.
 
-8000 → jamais publié
-5432 → jamais publié
-6379 → jamais publié
-```
+Le matching utilise `conntrack --ctorigdstport` afin de raisonner sur le port hôte d'origine après DNAT.
 
-## Secrets
+## DEV Full / STG / PROD
 
-Aucun secret réel n'est versionné. `DJANGO_SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `DATABASE_URL`, `CELERY_BROKER_URL` et `CELERY_RESULT_BACKEND` sont injectés par l'environnement d'exécution ; Ansible/Vault prendra cette responsabilité dans les jalons suivants.
+DEV Full construit localement l'image commune et exige PostgreSQL. STG/PROD utilisent une `APP_IMAGE` immuable ; PROD doit promouvoir exactement le digest qualifié en STG.
 
 ## Statut
 
-Les fichiers sont implémentés, mais aucun `docker compose config` ou runtime GREEN n'est revendiqué avant les gates prévus plus loin dans la roadmap.
+Le hardening est implémenté mais aucun `docker compose config`, runtime, firewall, reboot ou recovery GREEN n'est revendiqué avant DC-11 et les E2E suivants.

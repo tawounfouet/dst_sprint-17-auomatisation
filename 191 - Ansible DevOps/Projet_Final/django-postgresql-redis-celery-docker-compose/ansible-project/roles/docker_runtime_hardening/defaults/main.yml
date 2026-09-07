@@ -1,0 +1,24 @@
+---
+docker_runtime_hardening_daemon_config_path: /etc/docker/daemon.json
+docker_runtime_hardening_docker_service_name: docker
+
+docker_runtime_hardening_live_restore: true
+docker_runtime_hardening_log_driver: json-file
+docker_runtime_hardening_log_max_size: 10m
+docker_runtime_hardening_log_max_file: "3"
+docker_runtime_hardening_firewall_backend: iptables
+
+docker_runtime_hardening_firewall_enabled: true
+docker_runtime_hardening_firewall_chain: DST-COMPOSE-GUARD
+docker_runtime_hardening_firewall_script_path: /usr/local/sbin/datascientest-docker-user-firewall
+docker_runtime_hardening_systemd_dropin_directory: /etc/systemd/system/docker.service.d
+docker_runtime_hardening_systemd_dropin_path: /etc/systemd/system/docker.service.d/20-datascientest-firewall.conf
+docker_runtime_hardening_external_interface: "{{ ansible_facts.get('default_ipv4', {}).get('interface', '') }}"
+docker_runtime_hardening_public_tcp_ports:
+  - "{{ 8080 if (deployment_environment | default('dev')) == 'dev' else 80 }}"
+  - "443"
+docker_runtime_hardening_allowed_source_cidrs:
+  - "{{ '127.0.0.1/32' if (deployment_environment | default('dev')) == 'dev' else '0.0.0.0/0' }}"
+
+docker_runtime_hardening_packages:
+  - iptables

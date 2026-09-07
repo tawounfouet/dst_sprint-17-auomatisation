@@ -1,0 +1,133 @@
+---
+- name: Validate Docker runtime hardening base contract
+  ansible.builtin.assert:
+    that:
+      - docker_runtime_hardening_firewall_backend == 'iptables'
+      - docker_runtime_hardening_log_driver == 'json-file'
+      - docker_runtime_hardening_log_max_size | length > 0
+      - docker_runtime_hardening_log_max_file | string | length > 0
+    fail_msg: Docker daemon hardening variables are invalid.
+    quiet: true
+
+- name: Validate DOCKER-USER firewall contract
+  ansible.builtin.assert:
+    that:
+      - docker_runtime_hardening_external_interface | length > 0
+      - docker_runtime_hardening_public_tcp_ports | length > 0
+      - docker_runtime_hardening_allowed_source_cidrs | length > 0
+      - docker_runtime_hardening_firewall_chain | length <= 28
+    fail_msg: >-
+      Runtime firewall hardening requires a detected external interface, at
+      least one explicitly allowed public TCP port, a source CIDR and a valid
+      project chain name.
+    quiet: true
+  when: docker_runtime_hardening_firewall_enabled | bool
+
+- name: Install Docker runtime hardening packages
+  ansible.builtin.apt:
+    name: "{{ docker_runtime_hardening_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create Docker configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /etc/docker
+    - "{{ docker_runtime_hardening_systemd_dropin_directory }}"
+
+- name: Install idempotent DOCKER-USER firewall script
+  ansible.builtin.template:
+    src: docker-user-firewall.sh.j2
+    dest: "{{ docker_runtime_hardening_firewall_script_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+  when: docker_runtime_hardening_firewall_enabled | bool
+
+- name: Install Docker systemd firewall recovery drop-in
+  ansible.builtin.template:
+    src: docker-firewall-systemd.conf.j2
+    dest: "{{ docker_runtime_hardening_systemd_dropin_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  register: docker_runtime_hardening_systemd_dropin
+  notify: Restart Docker daemon for hardened configuration
+  when: docker_runtime_hardening_firewall_enabled | bool
+
+- name: Render hardened Docker daemon configuration
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: "{{ docker_runtime_hardening_daemon_config_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: false
+  notify: Restart Docker daemon for hardened configuration
+
+- name: Validate Docker daemon configuration before restart
+  ansible.builtin.command:
+    argv:
+      - dockerd
+      - --validate
+      - --config-file
+      - "{{ docker_runtime_hardening_daemon_config_path }}"
+  changed_when: false
+
+- name: Reload systemd units after Docker drop-in changes
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - docker_runtime_hardening_firewall_enabled | bool
+    - docker_runtime_hardening_systemd_dropin.changed | default(false)
+
+- name: Apply pending Docker daemon restart before firewall validation
+  ansible.builtin.meta: flush_handlers
+
+- name: Apply canonical DOCKER-USER policy immediately
+  ansible.builtin.command:
+    argv:
+      - "{{ docker_runtime_hardening_firewall_script_path }}"
+  register: docker_runtime_hardening_firewall_apply
+  changed_when: docker_runtime_hardening_firewall_apply.stdout | trim == 'changed'
+  when: docker_runtime_hardening_firewall_enabled | bool
+
+- name: Validate Docker daemon remains active with live restore enabled
+  ansible.builtin.command:
+    argv:
+      - docker
+      - info
+  register: docker_runtime_hardening_info
+  changed_when: false
+  failed_when:
+    - docker_runtime_hardening_info.rc != 0 or
+      ('Live Restore Enabled: true' not in docker_runtime_hardening_info.stdout)
+
+- name: Validate DOCKER-USER jump to project guard chain
+  ansible.builtin.command:
+    argv:
+      - iptables
+      - -w
+      - -C
+      - DOCKER-USER
+      - -j
+      - "{{ docker_runtime_hardening_firewall_chain }}"
+  changed_when: false
+  when: docker_runtime_hardening_firewall_enabled | bool
+
+- name: Validate project Docker firewall chain exists
+  ansible.builtin.command:
+    argv:
+      - iptables
+      - -w
+      - -S
+      - "{{ docker_runtime_hardening_firewall_chain }}"
+  register: docker_runtime_hardening_firewall_rules
+  changed_when: false
+  when: docker_runtime_hardening_firewall_enabled | bool

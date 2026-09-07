@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CHAIN='{{ docker_runtime_hardening_firewall_chain }}'
+EXTERNAL_INTERFACE='{{ docker_runtime_hardening_external_interface }}'
+
+iptables -w -S DOCKER-USER >/dev/null
+
+changed=0
+if ! iptables -w -S "$CHAIN" >/dev/null 2>&1; then
+  iptables -w -N "$CHAIN"
+  changed=1
+fi
+
+rule_count=0
+missing_rule=0
+
+check_rule() {
+  rule_count=$((rule_count + 1))
+  if ! iptables -w -C "$CHAIN" "$@" >/dev/null 2>&1; then
+    missing_rule=1
+  fi
+}
+
+check_rule -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+{% for source_cidr in docker_runtime_hardening_allowed_source_cidrs %}
+{% for public_port in docker_runtime_hardening_public_tcp_ports %}
+check_rule \
+  -i "$EXTERNAL_INTERFACE" \
+  -p tcp \
+  -s '{{ source_cidr }}' \
+  -m conntrack --ctorigdstport '{{ public_port }}' \
+  -j RETURN
+{% endfor %}
+{% endfor %}
+check_rule -i "$EXTERNAL_INTERFACE" -j DROP
+check_rule -j RETURN
+
+actual_rule_count="$(iptables -w -S "$CHAIN" | grep -c '^-A ' || true)"
+if (( missing_rule )) || [[ "$actual_rule_count" != "$rule_count" ]]; then
+  iptables -w -F "$CHAIN"
+  iptables -w -A "$CHAIN" \
+    -m conntrack --ctstate RELATED,ESTABLISHED \
+    -j RETURN
+{% for source_cidr in docker_runtime_hardening_allowed_source_cidrs %}
+{% for public_port in docker_runtime_hardening_public_tcp_ports %}
+  iptables -w -A "$CHAIN" \
+    -i "$EXTERNAL_INTERFACE" \
+    -p tcp \
+    -s '{{ source_cidr }}' \
+    -m conntrack --ctorigdstport '{{ public_port }}' \
+    -j RETURN
+{% endfor %}
+{% endfor %}
+  iptables -w -A "$CHAIN" -i "$EXTERNAL_INTERFACE" -j DROP
+  iptables -w -A "$CHAIN" -j RETURN
+  changed=1
+fi
+
+first_rule="$(iptables -w -S DOCKER-USER | sed -n '2p')"
+if [[ "$first_rule" != "-A DOCKER-USER -j $CHAIN" ]]; then
+  while iptables -w -C DOCKER-USER -j "$CHAIN" >/dev/null 2>&1; do
+    iptables -w -D DOCKER-USER -j "$CHAIN"
+  done
+  iptables -w -I DOCKER-USER 1 -j "$CHAIN"
+  changed=1
+fi
+
+if (( changed )); then
+  echo changed
+else
+  echo unchanged
+fi
