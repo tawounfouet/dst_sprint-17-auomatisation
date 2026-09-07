@@ -14,7 +14,8 @@ REDIS ROLE               ✅ IMPLEMENTED
 CELERY WORKER            ✅ IMPLEMENTED
 DJANGO CELERY BEAT       ✅ IMPLEMENTED
 GLOBAL ORCHESTRATION     ✅ IMPLEMENTED
-RUNTIME VALIDATION       ⏳
+RUNTIME VALIDATION       ✅ IMPLEMENTED
+STATIC GATE              ⏳
 E2E QUALIFICATION        ⏳
 IDEMPOTENCE              ⏳
 PACKAGE / ARTIFACT       ⏳
@@ -52,41 +53,71 @@ Contrat réseau :
 
 ## Orchestration — RC-07
 
-Le `site.yml` orchestre désormais réellement les sept rôles dans cet ordre :
+Le `site.yml` orchestre les sept rôles :
 
 ```text
-common
-  ↓
+common → postgresql → redis → django_app → celery → celery_beat → nginx
+```
+
+La topologie canonique est mono-host : le même `server1` appartient aux groupes `app` et `database`.
+
+## Runtime validation — RC-08
+
+Le contrat de validation couvre désormais les services :
+
+```text
 postgresql
-  ↓
-redis
-  ↓
-django_app
-  ↓
-celery
-  ↓
-celery_beat
-  ↓
+redis-server
+datascientest-django
+datascientest-celery
+datascientest-celery-beat
 nginx
 ```
 
-La topologie prod d'exemple est désormais explicitement mono-host : le même `server1` appartient aux groupes `app` et `database`, et `site.yml` refuse une topologie où les deux groupes pointent vers des hôtes différents.
+et ne s'arrête pas à `systemctl is-active`.
 
-Les overrides mono-host imposent :
-
-```text
-PostgreSQL → 127.0.0.1:5432
-Redis      → 127.0.0.1:6379
-Gunicorn   → 127.0.0.1:8000
-```
-
-Les trois secrets attendus restent fournis par Ansible Vault :
+Les contrôles prévus incluent :
 
 ```text
-vault_postgresql_password
-vault_django_secret_key
-vault_redis_password
+PostgreSQL 127.0.0.1:5432 + DB/role
+Redis 127.0.0.1:6379 + PING authentifié → PONG
+Gunicorn 127.0.0.1:8000
+nginx -t + HTTP :80
+GET /health/
+GET /health/database/   → SELECT 1
+GET /health/redis/      → Redis PING réel
+GET /health/celery/     → Celery control ping avec >= 1 worker
 ```
+
+Deux vrais scénarios asynchrones sont définis dans `validate.yml` :
+
+```text
+POST /api/tasks/add/ {21,21}
+→ Redis broker
+→ Celery Worker
+→ Redis result backend
+→ SUCCESS / 42
+```
+
+et :
+
+```text
+POST /api/tasks/database-probe/
+→ Redis
+→ Celery Worker
+→ Django
+→ PostgreSQL
+→ SELECT 1
+→ SUCCESS
+```
+
+La validation attend aussi que `django-celery-beat` ait réellement déclenché la tâche `datascientest-demo-heartbeat` au moins une fois via :
+
+```text
+total_run_count >= 1
+```
+
+> RC-08 est implémenté mais pas encore qualifié sur le nouveau harness GitHub Actions. Aucun statut GREEN runtime n'est revendiqué à ce stade.
 
 ## Composants applicatifs
 
@@ -110,24 +141,15 @@ database_probe()            → PostgreSQL → SELECT 1
 periodic_heartbeat()        → heartbeat horodaté via Celery Beat
 ```
 
-API immédiate :
+Endpoints :
 
 ```text
+GET  /health/redis/
+GET  /health/celery/
 POST /api/tasks/add/
 POST /api/tasks/uppercase/
 POST /api/tasks/database-probe/
 GET  /api/tasks/<task_id>/
-```
-
-Services systemd cibles :
-
-```text
-postgresql
-redis-server
-datascientest-django
-datascientest-celery
-datascientest-celery-beat
-nginx
 ```
 
 ## Roadmap
@@ -142,8 +164,8 @@ RC-05   rôle Redis                         ✅ IMPLEMENTED
 RC-06   rôle Celery Worker                 ✅ IMPLEMENTED
 RC-06B  Django Celery Beat                 ✅ IMPLEMENTED
 RC-07   orchestration globale              ✅ IMPLEMENTED
-RC-08   runtime validation                 ⏭ NEXT
-RC-09   static gate                        ⏳
+RC-08   runtime validation                 ✅ IMPLEMENTED
+RC-09   static gate                        ⏭ NEXT
 RC-10   qualification E2E                  ⏳
 RC-11   idempotence                        ⏳
 RC-12   packaging + artifact               ⏳
