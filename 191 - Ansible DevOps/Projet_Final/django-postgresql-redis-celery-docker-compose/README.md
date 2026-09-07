@@ -10,7 +10,7 @@ TARGET ARCHITECTURE             ✅ DESIGN
 DJANGO CONFIG FOUNDATION        ✅ IMPLEMENTED
 DJANGO-ENVIRON                  ✅ IMPLEMENTED
 MULTI-ENV DEV/STG/PROD          ✅ IMPLEMENTED
-SQLITE DEV-ONLY POLICY          ✅ IMPLEMENTED
+SQLITE DEV-ONLY POLICY          ✅ QUALIFIED
 DJANGO REST FRAMEWORK           ✅ IMPLEMENTED
 12-FACTOR DOCKER IMAGE          ✅ IMPLEMENTED
 BASE DOCKER COMPOSE STACK       ✅ IMPLEMENTED
@@ -25,12 +25,15 @@ COMPOSE CONFIG VALIDATION       ✅ GREEN DEV/STG/PROD
 DC-11 CI GREEN                  ✅
 DEV FULL COMPOSE E2E            ✅ GREEN
 DC-12 CI GREEN                  ✅
-STRICT IDEMPOTENCE              ⏳
+STG-LIKE COMPOSE E2E            ✅ GREEN
+ANTI-SQLITE RUNTIME STG         ✅ GREEN
+DC-13 CI GREEN                  ✅
+STRICT IDEMPOTENCE              ⏭ NEXT
 PACKAGE + SHA-256               ⏳
 FINAL REPORT                    ⏳
 ```
 
-Les statuts GREEN sont attribués uniquement aux gates réellement observés dans GitHub Actions. La qualification DEV Full utilise un runner Docker GitHub Actions ; elle ne constitue pas encore une qualification d'un VPS SSH/production.
+Les statuts GREEN sont attribués uniquement aux gates réellement observés dans GitHub Actions. Les qualifications DEV Full et STG-like utilisent des runners Docker GitHub Actions ; elles ne constituent pas encore une qualification d'un VPS SSH/production.
 
 ## Stack cible
 
@@ -70,6 +73,8 @@ DEV Full Compose                → PostgreSQL
 STG/PROD                        → PostgreSQL obligatoire, SQLite interdit
 ```
 
+DC-13 a désormais qualifié cette politique au runtime STG : absence de `DATABASE_URL`, SQLite, schéma non PostgreSQL et `DJANGO_DEBUG=true` sont réellement rejetés par l'image immuable.
+
 Django utilise `django-environ`. L'API asynchrone utilise Django REST Framework.
 
 ## Image applicative
@@ -82,7 +87,9 @@ RELEASE → migrations + collectstatic + schedule Beat
 RUN     → web / worker / beat / nginx
 ```
 
-DC-12 a réellement construit une seule image puis confirmé que `web`, `worker` et `beat` utilisent le même image ID.
+DC-12 a réellement construit une seule image puis confirmé que `web`, `worker` et `beat` utilisent le même image ID en DEV Full.
+
+DC-13 va plus loin : l'image est construite hors Compose, promue via un registry localhost éphémère pour obtenir une vraie référence `repository@sha256`, puis le registry est supprimé avant le déploiement. Le runtime STG-like utilise exclusivement cette référence digest-pinned avec `--no-build --pull never`.
 
 ## Orchestration Ansible active
 
@@ -145,7 +152,7 @@ STG/PROD: Nginx seulement sur :80 par défaut
 6379 Redis      published=false
 ```
 
-DC-12 a réellement confirmé ce contrat pour DEV Full depuis le runner hôte.
+DC-12 a réellement confirmé ce contrat pour DEV Full. DC-13 l'a confirmé à nouveau dans un runtime STG-like avec Nginx temporairement publié sur `0.0.0.0:8081` pour éviter un conflit avec le runner.
 
 ## DC-11 — Static Gate GREEN
 
@@ -182,12 +189,13 @@ HEAD 4c1a7f2a567739724794653d356ac17cc77312fb
 Result SUCCESS
 ```
 
-Le gate a été rejoué avec succès sur le HEAD DC-12 :
+Le gate a été rejoué avec succès sur le commit d'implémentation DC-13 :
 
 ```text
-Run ID 34135447373
-Job ID 101785201716
-HEAD f479e84b9152e3d9d1fab385b5256233a551f123
+Run #10
+Run ID 34138698606
+Job ID 101795532634
+HEAD cbc4845f61fd73bb43f408a8c0cc170217824fe2
 Result SUCCESS
 ```
 
@@ -242,7 +250,90 @@ Verdict :
 DC12_DEV_FULL_E2E_PASS
 ```
 
-La preuve réseau signifie que les ports internes ne sont pas publiés sur l'hôte/loopback. Elle ne prétend pas qu'une IP de bridge Docker soit intrinsèquement inaccessible depuis l'hôte sans politique firewall supplémentaire.
+La régression DEV Full a été rejouée avec succès lors de l'implémentation DC-13 :
+
+```text
+Run #3
+Run ID 34138698561
+Job ID 101795532662
+HEAD cbc4845f61fd73bb43f408a8c0cc170217824fe2
+Result SUCCESS
+```
+
+## DC-13 — STG-like E2E + anti-SQLite GREEN
+
+Workflow :
+
+```text
+.github/workflows/ansible-django-postgresql-redis-celery-docker-compose-stg-e2e.yml
+```
+
+Qualification canonique :
+
+```text
+Run #2
+Run ID 34138825440
+Job ID 101795932401
+HEAD 54776ceb82d55c7356df1e73d38054ba692088cb
+Result SUCCESS
+
+Started 2026-09-07T15:32:23Z
+Updated 2026-09-07T15:33:44Z
+Ubuntu 24.04.4
+Python 3.12.14
+Docker 28.0.4
+Docker Compose v2.38.2
+```
+
+Preuves observées :
+
+```text
+application image built outside Compose                      ✅
+image promoted to repository@sha256                           ✅
+registry promotion removed before deployment                  ✅
+third-party images preloaded outside Compose                  ✅
+Compose build for web/worker/beat absent                      ✅
+Compose runtime --no-build --pull never                       ✅
+APPLICATION_ENV=stg                                           ✅
+DJANGO_SETTINGS_MODULE=config.settings.stg                     ✅
+DJANGO_DEBUG=false                                             ✅
+Django database backend = PostgreSQL                          ✅
+missing DATABASE_URL rejected                                 ✅
+SQLite DATABASE_URL rejected                                  ✅
+non-PostgreSQL DATABASE_URL rejected                          ✅
+DJANGO_DEBUG=true rejected                                    ✅
+PostgreSQL healthy + SELECT 1                                 ✅
+Redis healthy + authenticated PING                            ✅
+migrate + collectstatic + Beat schedule                      ✅
+nginx/web/db/redis/worker/beat healthy                        ✅
+web/worker/beat exact same prebuilt digest-pinned image       ✅
+health/database/redis/celery via Nginx                        ✅
+add(21,21) → 42                                               ✅
+uppercase(datascientest) → DATASCIENTEST                      ✅
+database_probe → SELECT 1                                     ✅
+Beat total_run_count >= 1                                     ✅
+periodic_heartbeat succeeded in Worker logs                   ✅
+127.0.0.1:8081 reachable                                      ✅
+127.0.0.1:8000/5432/6379 unreachable                          ✅
+HostConfig.PortBindings absent on 8000/5432/6379              ✅
+```
+
+Digest applicatif observé dans le run canonique :
+
+```text
+sha256:f1fe85b62f40be2f2fda4a744ed736758b01c2cf077a87ad9e744bbe10169b0f
+```
+
+Verdicts :
+
+```text
+DC13_PARITY_PASS: STG-like preserves DC-12 functional task/health/Beat behavior with stricter runtime policy
+DC13_STG_LIKE_E2E_PASS
+```
+
+Le premier run DC-13 a échoué parce que `--pull never` était appliqué alors que l'image tierce `redis:7.4-alpine` n'était pas encore présente sur le runner. La correction précharge PostgreSQL/Redis/Nginx explicitement **hors Compose** ; le contrat STG reste donc sans build et sans pull implicite au moment du déploiement.
+
+La référence digest-pinned est obtenue via un registry localhost éphémère. Cela qualifie l'immutabilité `repository@sha256`, mais pas encore un registry distant de production, son authentification, sa signature ou sa provenance supply-chain.
 
 ## Roadmap
 
@@ -260,10 +351,10 @@ DC-09  Secure runtime configuration                               ✅ IMPLEMENTE
 DC-10  Runtime hardening                                          ✅ IMPLEMENTED
 DC-11  Unit tests + static gate + Compose validation              ✅ GREEN
 DC-12  DEV Full E2E                                               ✅ GREEN
-DC-13  STG-like E2E + anti-SQLite runtime                         ⏭ NEXT
-DC-14  Strict idempotence                                         ⏳
+DC-13  STG-like E2E + anti-SQLite runtime                         ✅ GREEN
+DC-14  Strict idempotence                                         ⏭ NEXT
 DC-15  Package + SHA-256 + artifact                               ⏳
 DC-16  Final qualification report + 12-Factor matrix              ⏳
 ```
 
-Les preuves historiques de la baseline native ne qualifient pas cette variante Docker Compose ; DC-11 et DC-12 constituent ses premières qualifications propres.
+Les preuves historiques de la baseline native ne qualifient pas cette variante Docker Compose. DC-11, DC-12 et DC-13 constituent désormais ses qualifications propres et successives : statique/config, DEV Full runtime puis STG-like runtime immuable.
