@@ -1,11 +1,5 @@
 x-app-service: &app-service
   image: ${APP_IMAGE:-datascientest-django:dev}
-  build:
-    context: ../django-app
-    dockerfile: Dockerfile
-    args:
-      APPLICATION_VERSION: ${APPLICATION_VERSION:-0.0.0-dev}
-      APPLICATION_COMMIT: ${APPLICATION_COMMIT:-local}
   environment: &app-environment
     APPLICATION_ENV: ${APPLICATION_ENV:-dev}
     DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.dev}
@@ -163,8 +157,6 @@ services:
     depends_on:
       web:
         condition: service_healthy
-    ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - static_data:/srv/static:ro
