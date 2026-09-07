@@ -4,23 +4,65 @@
 
 ```text
 IMPLEMENTATION                                      ✅
-FULL ANSIBLE SITE PASS 1                           ✅ IMPLEMENTED
-FULL ANSIBLE SITE PASS 2                           ✅ IMPLEMENTED
-SECOND PASS changed=0                              ✅ IMPLEMENTED
-NO APPLICATION REBUILD IN IDEMPOTENCE PAIR         ✅ IMPLEMENTED
-NO LONG-RUNNING CONTAINER RECREATE                 ✅ IMPLEMENTED
-CONFIG CHECKSUM STABILITY                          ✅ IMPLEMENTED
-NAMED VOLUME ATTACHMENT STABILITY                  ✅ IMPLEMENTED
-POSTGRESQL DATA PRESERVATION                       ✅ IMPLEMENTED
-REDIS DATA PRESERVATION                            ✅ IMPLEMENTED
-STATIC VOLUME DATA PRESERVATION                    ✅ IMPLEMENTED
-POST-CONVERGENCE FUNCTIONAL SMOKE                   ✅ IMPLEMENTED
-CI GREEN                                            ⏳
+FULL ANSIBLE SITE PASS 1                           ✅ QUALIFIED
+FULL ANSIBLE SITE PASS 2                           ✅ QUALIFIED
+SECOND PASS changed=0                              ✅ GREEN
+NO APPLICATION REBUILD IN IDEMPOTENCE PAIR         ✅ GREEN
+NO LONG-RUNNING CONTAINER RECREATE                 ✅ GREEN
+CONFIG CHECKSUM STABILITY                          ✅ GREEN
+NAMED VOLUME ATTACHMENT STABILITY                  ✅ GREEN
+POSTGRESQL DATA PRESERVATION                       ✅ GREEN
+REDIS DATA PRESERVATION                            ✅ GREEN
+STATIC VOLUME DATA PRESERVATION                    ✅ GREEN
+POST-CONVERGENCE FUNCTIONAL SMOKE                   ✅ GREEN
+CI GREEN                                            ✅
 ```
 
-DC-14 ne se contente plus de vérifier que Docker Compose fonctionne. Le jalon qualifie la **stabilité d'une seconde convergence Ansible complète** sur une cible STG-like déjà conforme.
+DC-14 ne se contente pas de vérifier que Docker Compose fonctionne. Le jalon qualifie la **stabilité réelle d'une seconde convergence Ansible complète** sur une cible STG-like déjà conforme.
 
-Aucun statut GREEN n'est revendiqué avant observation d'un run GitHub Actions réussi.
+Le gate est désormais GREEN sur le commit applicatif testé `ec4be912013c625df6ea347c43c20cf650c66297`.
+
+## Qualification canonique
+
+```text
+Workflow : Ansible Django PostgreSQL Redis Celery Compose Strict Idempotence
+Run      : #5
+Run ID   : 34149470184
+Job ID   : 101828487085
+Commit   : ec4be912013c625df6ea347c43c20cf650c66297
+Result   : SUCCESS
+Runner   : GitHub-hosted Ubuntu 24.04.4 LTS
+Python   : 3.12.14
+Ansible  : ansible-core 2.20.8
+```
+
+La première convergence a matérialisé l'état attendu :
+
+```text
+localhost : ok=54 changed=8 unreachable=0 failed=0 skipped=3
+DC14_PASS1_PASS: first convergence changed=8
+DC14_DATA_SEED_PASS: PostgreSQL, Redis and static-volume probes written
+```
+
+La seconde convergence, avec les mêmes entrées, a produit :
+
+```text
+localhost : ok=54 changed=0 unreachable=0 failed=0 skipped=3
+DC14_ANSIBLE_PASS: second full site convergence changed=0
+```
+
+Puis l'ensemble des preuves fortes a été observé :
+
+```text
+DC14_CONTAINER_PASS
+DC14_VOLUME_PASS
+DC14_CONFIG_PASS
+DC14_ARTIFACT_PASS
+DC14_DATA_PASS
+DC14_FUNCTIONAL_PASS
+DC14_COMPOSE_EQUIVALENCE
+DC14_STRICT_IDEMPOTENCE_PASS
+```
 
 ## Définition de l'idempotence stricte
 
@@ -82,11 +124,13 @@ Une image applicative STG/PROD reste obligatoire sous forme :
 registry/path/image@sha256:<64 hex>
 ```
 
-Ainsi, si la seconde convergence essayait de reconstruire ou de récupérer l'image applicative depuis le registry de promotion déjà supprimé, elle échouerait.
+Ainsi, si l'une des deux convergences essayait de reconstruire ou de récupérer l'image applicative depuis le registry de promotion déjà supprimé, elle échouerait.
+
+Dans le run canonique, l'image a été construite et promue **une seule fois avant la paire**, puis son identité et son horodatage de création sont restés inchangés jusqu'à la fin du gate.
 
 ## Correction healthcheck STG/PROD
 
-La qualification Ansible réelle fait aussi apparaître une contrainte de runtime : les healthchecks du conteneur `web` interrogent `127.0.0.1:8000`. Les inventaires STG/PROD incluent donc désormais explicitement :
+La qualification Ansible réelle a aussi fait apparaître une contrainte de runtime : les healthchecks du conteneur `web` interrogent `127.0.0.1:8000`. Les inventaires STG/PROD incluent donc explicitement :
 
 ```text
 localhost
@@ -110,6 +154,12 @@ health state
 
 Après la seconde convergence, les snapshots doivent être strictement identiques.
 
+Le run canonique a confirmé :
+
+```text
+DC14_CONTAINER_PASS: six long-running service container IDs and image IDs are unchanged
+```
+
 Cette preuve est plus forte qu'un simple `docker compose ps` : un conteneur recréé avec le même nom et la même image posséderait un nouvel ID et ferait échouer le gate.
 
 ## Preuves de stabilité de configuration
@@ -126,7 +176,11 @@ redis/entrypoint.sh
 
 Les checksums doivent rester identiques.
 
-Le fichier `.env.runtime` n'est jamais imprimé ; seul son digest est comparé.
+Le fichier `.env.runtime` reste `root:root 0600`, n'est jamais affiché, et seul son digest est comparé. Le run canonique a confirmé :
+
+```text
+DC14_CONFIG_PASS: Compose files, service configs and .env.runtime checksums are unchanged
+```
 
 ## Preuves de conservation des volumes et données
 
@@ -146,16 +200,12 @@ Redis      → clé dc14:idempotence=preserved + SAVE
 static     → /app/staticfiles/.dc14-idempotence
 ```
 
-Après la seconde convergence :
+Après la seconde convergence, les mêmes volumes sont toujours attachés et les trois sondes sont relues avec succès :
 
 ```text
-mêmes volumes nommés
-PostgreSQL marker=preserved
-Redis marker=preserved
-static marker=preserved
+DC14_VOLUME_PASS: PostgreSQL, Redis and static named-volume attachments are unchanged
+DC14_DATA_PASS: PostgreSQL, Redis and static-volume data survived pass 2
 ```
-
-sont obligatoires.
 
 ## Preuve d'absence de rebuild
 
@@ -169,11 +219,15 @@ repository@sha256
 
 et exige les mêmes métadonnées après la seconde convergence.
 
-Les trois processus applicatifs `web`, `worker`, `beat` doivent continuer à pointer sur la même image préparée avant la paire.
+Les trois processus applicatifs `web`, `worker`, `beat` continuent à pointer sur la même image préparée avant la paire. La preuve canonique est :
+
+```text
+DC14_ARTIFACT_PASS: application image identity/creation metadata unchanged; no rebuild occurred in the idempotence pair
+```
 
 ## Validation fonctionnelle après convergence 2
 
-Une seconde convergence parfaitement stable ne doit pas casser le service. Le gate réutilise donc la validation STG-like pour confirmer après `changed=0` :
+Une seconde convergence parfaitement stable ne doit pas casser le service. Le gate réutilise donc la validation STG-like après le `changed=0` pour confirmer :
 
 ```text
 health database / redis / celery
@@ -183,6 +237,80 @@ database_probe → SELECT 1
 port public Nginx accessible
 8000 / 5432 / 6379 non accessibles depuis l'hôte
 ```
+
+Le run canonique conclut :
+
+```text
+DC14_FUNCTIONAL_PASS: post-idempotence STG health, Celery round-trips and host-port contract remain valid
+```
+
+## Root causes découvertes par DC-14
+
+DC-14 a révélé trois écarts que les qualifications fonctionnelles précédentes ne suffisaient pas à exposer.
+
+### 1. Projet Compose différent pour les one-off
+
+Les commandes `docker compose run --rm` utilisaient initialement le nom de projet implicite du répertoire alors que `community.docker.docker_compose_v2` utilisait explicitement `datascientest`. Les processus de migration pouvaient donc rejoindre un réseau Compose différent de celui de `db` et `redis`.
+
+Correction : toutes les opérations one-shot utilisent désormais explicitement :
+
+```text
+--project-name datascientest
+```
+
+### 2. Lecture de `.env.runtime` par le harness
+
+Le harness tentait initialement de lire `.env.runtime` comme utilisateur non privilégié, alors que DC-09 impose légitimement :
+
+```text
+root:root
+0600
+```
+
+La correction a porté sur le **test**, pas sur la sécurité : seules les opérations de contrôle qui doivent lire ce fichier passent par un contexte privilégié. Les permissions du secret n'ont pas été relâchées.
+
+### 3. Drift de mode sur `redis/entrypoint.sh`
+
+Le source Git du fichier `docker/redis/entrypoint.sh` est versionné en mode exécutable `100755`. Le déploiement récursif Ansible utilise `mode: preserve`, mais une tâche suivante forçait le fichier à `0555`.
+
+Chaque nouvelle convergence provoquait donc le cycle :
+
+```text
+copy preserve : 0555 → 0755  => changed
+file task     : 0755 → 0555  => changed
+```
+
+Le PASS 2 restait alors à `changed=2` malgré une stack fonctionnellement correcte.
+
+Correction : le rôle converge désormais vers `0755`, cohérent avec le mode Git source. Le run canonique suivant a obtenu `changed=0`.
+
+## Régressions sur le même commit qualifié
+
+Le commit `ec4be912013c625df6ea347c43c20cf650c66297` a également passé les gates de régression suivants :
+
+```text
+Static Gate
+Run ID 34149470178
+Job ID 101828487082
+SUCCESS
+
+DEV Full E2E
+Run ID 34149470187
+Job ID 101828487313
+SUCCESS
+
+STG-like E2E
+Run ID 34149470152
+Job ID 101828486901
+SUCCESS
+
+Strict Idempotence
+Run ID 34149470184
+Job ID 101828487085
+SUCCESS
+```
+
+La correction d'idempotence ne régresse donc ni les contrôles statiques, ni le runtime DEV Full, ni la qualification STG-like.
 
 ## Harness
 
@@ -204,9 +332,13 @@ DC14_ALLOW_EPHEMERAL_HOST=1
 
 car la qualification installe/configure Docker et modifie le firewall de l'hôte éphémère.
 
-## Verdict attendu
+## Périmètre de la preuve
 
-Le jalon sera GREEN uniquement après observation de :
+Le statut GREEN démontre une convergence réelle sur un **runner GitHub-hosted Ubuntu 24.04 éphémère**, avec Ansible exécuté localement sur cette cible de qualification.
+
+Il ne constitue pas encore une preuve de déploiement sur un VPS distant via SSH, ni une qualification de production réelle, de registry distant, de TLS public ou de haute disponibilité multi-hôte.
+
+## Verdict
 
 ```text
 DC14_ANSIBLE_PASS: second full site convergence changed=0
@@ -216,10 +348,13 @@ DC14_CONFIG_PASS
 DC14_ARTIFACT_PASS
 DC14_DATA_PASS
 DC14_FUNCTIONAL_PASS
+DC14_COMPOSE_EQUIVALENCE
 DC14_STRICT_IDEMPOTENCE_PASS
+
+DC-14 STRICT IDEMPOTENCE = GREEN
 ```
 
-## Prochain jalon après GREEN
+## Prochain jalon
 
 ```text
 DC-15 — Package + SHA-256 + artifact
