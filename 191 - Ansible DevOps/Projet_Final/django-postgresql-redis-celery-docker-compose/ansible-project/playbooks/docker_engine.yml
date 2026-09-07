@@ -1,0 +1,10 @@
+---
+- name: Install and validate Docker Engine
+  hosts: app
+  become: true
+  gather_facts: true
+  roles:
+    - role: docker_engine
+      tags:
+        - docker
+        - docker_engine

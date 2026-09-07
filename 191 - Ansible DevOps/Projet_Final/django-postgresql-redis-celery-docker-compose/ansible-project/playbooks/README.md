@@ -1,99 +1,75 @@
-# Playbooks — Django + PostgreSQL
+# Playbooks — Variante Docker Compose
 
-## `site.yml`
+## État de transition
 
-`site.yml` est le point d'entrée d'orchestration du projet.
+La variante a été copiée depuis la baseline native `django-postgresql-redis-celery/`. Les anciens `site.yml` et `validate.yml` décrivent encore la qualification systemd historique et restent présents comme **référence de migration** jusqu'à DC-08/DC-10.
 
-Ordre volontaire :
+Ils ne doivent pas être interprétés comme le point d'entrée final de la variante Docker Compose.
 
-```text
-Topology validation
-        ↓
-common          → app1 + db1
-        ↓
-postgresql      → db1
-        ↓
-django_app      → app1
-        ↓
-nginx           → app1
-```
+## `docker_engine.yml` — DC-07
 
-Le projet cible actuellement exactement deux hôtes logiques : un hôte `app` et un hôte `database`. Le premier play refuse une topologie différente afin d'éviter que les variables fondées sur `groups['app'][0]` et `groups['database'][0]` ne deviennent ambiguës.
-
-## Vault explicite
-
-Les plays PostgreSQL et Django chargent explicitement :
+Le playbook actif du jalon DC-07 est :
 
 ```text
-../inventories/prod/group_vars/vault.yml
+playbooks/docker_engine.yml
 ```
 
-Ce fichier doit être créé localement à partir de `vault.example.yml`, chiffré avec `ansible-vault`, et ne doit jamais être commité.
-
-Exemple :
-
-```bash
-cp inventories/prod/group_vars/vault.example.yml inventories/prod/group_vars/vault.yml
-ansible-vault encrypt inventories/prod/group_vars/vault.yml
-```
-
-## Syntax check
-
-Depuis `ansible-project/` :
-
-```bash
-ansible-playbook playbooks/site.yml --syntax-check --ask-vault-pass
-ansible-playbook playbooks/validate.yml --syntax-check
-```
-
-ou avec un fichier de mot de passe Vault local et ignoré par Git :
-
-```bash
-ansible-playbook playbooks/site.yml \
-  --syntax-check \
-  --vault-password-file .vault_pass
-```
-
-## Déploiement complet
-
-```bash
-ansible-playbook playbooks/site.yml --ask-vault-pass
-```
-
-## Validation runtime
-
-Après un déploiement :
-
-```bash
-ansible-playbook playbooks/validate.yml
-```
-
-`validate.yml` ne modifie pas le système cible et ne recharge pas les secrets Vault. Il vérifie :
+Il cible le groupe `app`, élève les privilèges et applique uniquement :
 
 ```text
-PostgreSQL actif + :5432
-base django_app
-rôle django_app
-Gunicorn actif + :8000
-Nginx actif + nginx -t + :80
-app1 → db1:5432
-GET /
-GET /health/
-GET /health/database/
-GET /api/info/
+docker_engine
 ```
 
-Le contrôle `/health/database/` est la preuve fonctionnelle principale du chemin Django → PostgreSQL et du `SELECT 1` réel exécuté par l'application.
+Il ne déploie aucun composant applicatif.
 
-## Exécution sélective
+Exécution :
 
 ```bash
-ansible-playbook playbooks/site.yml --tags common --ask-vault-pass
-ansible-playbook playbooks/site.yml --tags postgresql --ask-vault-pass
-ansible-playbook playbooks/site.yml --tags django --ask-vault-pass
-ansible-playbook playbooks/site.yml --tags nginx --ask-vault-pass
-ansible-playbook playbooks/validate.yml --tags database
-ansible-playbook playbooks/validate.yml --tags app
+ansible-playbook \
+  -i inventories/prod/hosts.yml \
+  playbooks/docker_engine.yml
 ```
 
-Le tag `always` du play de validation de topologie garantit que le contrat d'inventaire reste contrôlé lors des exécutions partielles.
+Syntax check :
+
+```bash
+ansible-playbook \
+  -i inventories/prod/hosts.yml \
+  playbooks/docker_engine.yml \
+  --syntax-check
+```
+
+## Validations DC-07
+
+Le rôle `docker_engine` vérifie lui-même :
+
+```text
+Docker service enabled + active
+docker info
+docker compose version
+docker buildx version
+```
+
+Ces validations ne constituent pas encore une qualification CI ou E2E tant qu'elles n'ont pas été exécutées sur un hôte cible réel ou sur le futur harness de qualification.
+
+## Cible DC-08
+
+Le prochain jalon remplacera progressivement l'orchestration native par :
+
+```text
+common
+  ↓
+docker_engine
+  ↓
+compose_stack
+```
+
+avec des inventories séparés :
+
+```text
+dev
+stg
+prod
+```
+
+et une sélection explicite des overlays Compose correspondants.

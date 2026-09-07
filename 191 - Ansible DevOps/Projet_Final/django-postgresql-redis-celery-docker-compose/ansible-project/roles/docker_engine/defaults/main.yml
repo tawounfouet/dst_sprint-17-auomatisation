@@ -1,0 +1,43 @@
+---
+docker_engine_target_distribution: Ubuntu
+docker_engine_target_release: noble
+
+docker_engine_apt_architecture_map:
+  x86_64: amd64
+  aarch64: arm64
+  armv7l: armhf
+  ppc64le: ppc64el
+  s390x: s390x
+
+docker_engine_apt_architecture: "{{ docker_engine_apt_architecture_map.get(ansible_architecture, '') }}"
+
+docker_engine_conflicting_packages:
+  - docker.io
+  - docker-compose
+  - docker-compose-v2
+  - docker-doc
+  - docker-buildx
+  - podman-docker
+  - containerd
+  - runc
+
+docker_engine_prerequisite_packages:
+  - ca-certificates
+  - curl
+
+docker_engine_repository_url: https://download.docker.com/linux/ubuntu
+docker_engine_gpg_key_url: https://download.docker.com/linux/ubuntu/gpg
+docker_engine_keyring_directory: /etc/apt/keyrings
+docker_engine_gpg_key_path: /etc/apt/keyrings/docker.asc
+docker_engine_repository_path: /etc/apt/sources.list.d/docker.sources
+
+docker_engine_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+docker_engine_service_name: docker
+
+docker_engine_remove_conflicting_packages: true

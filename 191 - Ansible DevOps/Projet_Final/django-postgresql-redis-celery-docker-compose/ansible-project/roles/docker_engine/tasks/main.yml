@@ -1,0 +1,106 @@
+---
+- name: Validate Docker Engine target platform
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == docker_engine_target_distribution
+      - ansible_distribution_release == docker_engine_target_release
+      - docker_engine_apt_architecture | length > 0
+    fail_msg: >-
+      This project role targets Ubuntu 24.04 (noble) on a Docker-supported
+      architecture. Detected {{ ansible_distribution }}
+      {{ ansible_distribution_version }} / {{ ansible_architecture }}.
+
+- name: Remove packages conflicting with Docker official packages
+  ansible.builtin.apt:
+    name: "{{ docker_engine_conflicting_packages }}"
+    state: absent
+    purge: false
+  when: docker_engine_remove_conflicting_packages | bool
+
+- name: Install Docker repository prerequisites
+  ansible.builtin.apt:
+    name: "{{ docker_engine_prerequisite_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create APT keyring directory
+  ansible.builtin.file:
+    path: "{{ docker_engine_keyring_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install Docker official APT signing key
+  ansible.builtin.get_url:
+    url: "{{ docker_engine_gpg_key_url }}"
+    dest: "{{ docker_engine_gpg_key_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure Docker official APT repository
+  ansible.builtin.copy:
+    dest: "{{ docker_engine_repository_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: {{ docker_engine_repository_url }}
+      Suites: {{ docker_engine_target_release }}
+      Components: stable
+      Architectures: {{ docker_engine_apt_architecture }}
+      Signed-By: {{ docker_engine_gpg_key_path }}
+  register: docker_engine_repository_result
+
+- name: Refresh APT metadata after Docker repository configuration
+  ansible.builtin.apt:
+    update_cache: true
+  when: docker_engine_repository_result.changed
+
+- name: Install Docker Engine, Buildx and Compose v2 plugin
+  ansible.builtin.apt:
+    name: "{{ docker_engine_packages }}"
+    state: present
+    update_cache: true
+
+- name: Ensure Docker service is enabled and running
+  ansible.builtin.service:
+    name: "{{ docker_engine_service_name }}"
+    state: started
+    enabled: true
+
+- name: Validate Docker daemon with docker info
+  ansible.builtin.command:
+    argv:
+      - docker
+      - info
+  register: docker_engine_info_result
+  changed_when: false
+
+- name: Validate Docker Compose v2 plugin
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - version
+  register: docker_engine_compose_version_result
+  changed_when: false
+
+- name: Validate Docker Buildx plugin
+  ansible.builtin.command:
+    argv:
+      - docker
+      - buildx
+      - version
+  register: docker_engine_buildx_version_result
+  changed_when: false
+
+- name: Report Docker runtime versions
+  ansible.builtin.debug:
+    msg:
+      - "Docker daemon validation: OK"
+      - "{{ docker_engine_compose_version_result.stdout | trim }}"
+      - "{{ docker_engine_buildx_version_result.stdout | trim }}"

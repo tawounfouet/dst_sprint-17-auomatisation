@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  role_name: docker_engine
+  author: Thomas AWOUNFOUET
+  description: Install Docker Engine and Docker Compose v2 from Docker official APT repository on Ubuntu 24.04.
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+
+dependencies: []
