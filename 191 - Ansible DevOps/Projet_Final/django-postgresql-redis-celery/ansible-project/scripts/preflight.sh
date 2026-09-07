@@ -15,4 +15,4 @@ ansible-galaxy collection install -r requirements.yml
 ansible-inventory -i "$INVENTORY" --graph
 ansible -i "$INVENTORY" app:database -m ansible.builtin.ping
 ansible-playbook -i "$INVENTORY" playbooks/site.yml --syntax-check "${VAULT_ARGS[@]}"
-ansible-playbook -i "$INVENTORY" playbooks/validate.yml --syntax-check
+ansible-playbook -i "$INVENTORY" playbooks/validate.yml --syntax-check "${VAULT_ARGS[@]}"
