@@ -40,7 +40,7 @@ cleanup() {
   if [[ -f "$RUNTIME_ENV" && -d "$DEPLOY_DIR" ]]; then
     (
       cd "$DEPLOY_DIR"
-      docker compose \
+      sudo docker compose \
         --project-name "$PROJECT_NAME" \
         --env-file .env.runtime \
         -f compose.yml \
@@ -164,10 +164,12 @@ recap_failed() {
   fi
 }
 
+# .env.runtime is deliberately root:root 0600. All Compose commands that need
+# to read it therefore run through sudo rather than weakening the secret file.
 compose() {
   (
     cd "$DEPLOY_DIR"
-    docker compose \
+    sudo docker compose \
       --project-name "$PROJECT_NAME" \
       --env-file .env.runtime \
       -f compose.yml \
@@ -210,7 +212,7 @@ snapshot_checksums() {
   local output="$1"
   (
     cd "$DEPLOY_DIR"
-    sha256sum \
+    sudo sha256sum \
       compose.yml \
       compose.stg.yml \
       nginx/default.conf \
