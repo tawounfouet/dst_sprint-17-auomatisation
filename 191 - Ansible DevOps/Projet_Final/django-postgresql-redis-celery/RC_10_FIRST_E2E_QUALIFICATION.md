@@ -2,150 +2,172 @@
 
 ## Statut
 
-**RUN #1 OBSERVÉ ❌ — CORRECTIF DE SYNCHRONISATION BEAT APPLIQUÉ — NOUVEAU RUN À QUALIFIER**
+**GREEN ✅**
 
-RC-10 introduit la première qualification GitHub Actions dédiée à la variante mono-serveur Django + PostgreSQL + Redis + Celery Worker + Django Celery Beat + Nginx.
+La première qualification E2E de la variante mono-serveur Django + PostgreSQL + Redis + Celery Worker + Django Celery Beat + Nginx a été obtenue sur GitHub Actions.
 
-## Harness
-
-Le harness dédié est :
+## Run canonique RC-10
 
 ```text
-ansible-project/tests/e2e/run_monohost_redis_celery_qualification.sh
+workflow   : Ansible Django PostgreSQL Redis Celery Mono-Host Qualification
+run        : #2
+run ID     : 34097929297
+job ID     : 101665586486
+head SHA   : ee87a8e332ddbf90ce953cc26c0cc7c50241e25a
+conclusion : success
+runner     : Ubuntu 24.04.4
+Python     : 3.12.14
+ansible    : 2.20.8
 ```
 
-Il provisionne une seule cible Ubuntu 24.04 avec systemd et place `server1` dans les groupes Ansible `app` et `database`.
+Le run a démarré le `2026-09-07T07:55:54Z` et s'est terminé avec succès à `2026-09-07T07:59:37Z`.
 
-## Workflow
+## Static gate
 
 ```text
-.github/workflows/ansible-django-postgresql-redis-celery-monohost.yml
+All available static checks passed.
 ```
 
-Le workflow s'exécute sur Ubuntu 24.04 et publie les preuves de qualification ou les diagnostics de panne. RC-12 restera responsable du ZIP final, du SHA-256 et du package safety gate.
-
-## Run #1
+## Topologie réellement utilisée
 
 ```text
-workflow : Ansible Django PostgreSQL Redis Celery Mono-Host Qualification
-run      : #1
-run ID   : 34097304269
-head SHA : dc06ac0607bb9e2dddaffbb1168efdcd8dab5972
-conclusion: failure
+@all:
+  |--@ungrouped:
+  |--@app:
+  |  |--server1
+  |--@database:
+  |  |--server1
 ```
 
-Le run a prouvé avec succès avant l'échec final :
+La cible était un conteneur Ubuntu 24.04 + systemd jetable. Son adresse `172.18.0.2` appartient uniquement au réseau CI de ce run et ne constitue pas une adresse de production.
+
+## Premier déploiement
 
 ```text
-static gate PASS
-inventaire mono-host server1 PASS
-site.yml #1 PASS
-PostgreSQL actif
-Redis actif + PING authentifié
-Gunicorn actif
-Celery Worker actif + control ping
-Celery Beat actif
-Nginx actif
-add(21,21) → SUCCESS / 42
-database_probe → SUCCESS / SELECT 1
+localhost : ok=1  changed=0  unreachable=0 failed=0 skipped=0
+server1   : ok=81 changed=43 unreachable=0 failed=0 skipped=0
 ```
 
-La première installation Ansible s'est terminée sans erreur :
+## Runtime validation
 
 ```text
-server1 : ok=81 changed=43 unreachable=0 failed=0
+localhost : ok=1  changed=0 unreachable=0 failed=0 skipped=0
+server1   : ok=37 changed=0 unreachable=0 failed=0 skipped=0
 ```
 
-## Cause du RED
-
-La validation exigeait :
+Services observés actifs :
 
 ```text
-django_celery_beat_periodictask.total_run_count >= 1
+server1 postgresql=active
+server1 redis=active
+server1 gunicorn=active
+server1 celery=active
+server1 celery_beat=active
+server1 nginx=active
 ```
 
-mais la requête lisait encore :
+## Preuves fonctionnelles
+
+Le run a réellement validé :
 
 ```text
-total_run_count = 0
+/health/             → healthy
+/health/database/    → PostgreSQL connected + SELECT 1
+/health/redis/       → Redis connected + PING
+/health/celery/      → Celery connected + worker répond
 ```
 
-après la fenêtre de polling.
-
-Les diagnostics montrent pourtant que Celery Beat avait réellement publié la tâche toutes les 30 secondes et que le worker l'avait exécutée :
+Round-trip asynchrone :
 
 ```text
-09:51:27 Scheduler: Sending due task datascientest-demo-heartbeat
-09:51:27 tasks_demo.periodic_heartbeat succeeded
-
-09:51:57 Scheduler: Sending due task datascientest-demo-heartbeat
-09:51:57 tasks_demo.periodic_heartbeat succeeded
-
-09:52:27 Scheduler: Sending due task datascientest-demo-heartbeat
-09:52:27 tasks_demo.periodic_heartbeat succeeded
+Django API
+   ↓
+add(21,21)
+   ↓
+Redis broker
+   ↓
+Celery Worker
+   ↓
+Redis result backend
+   ↓
+SUCCESS / 42
 ```
 
-Le défaut portait donc sur la **persistance observable de l'état du DatabaseScheduler**, pas sur l'exécution de Beat ni sur le worker.
+Accès DB depuis le worker :
 
-## Correctif
+```text
+Django API
+   ↓
+database_probe
+   ↓
+Redis
+   ↓
+Celery Worker
+   ↓
+Django DB connection
+   ↓
+PostgreSQL
+   ↓
+SELECT 1
+```
 
-La configuration Django impose désormais :
+Django Celery Beat a également passé le contrat :
+
+```text
+PeriodicTask = datascientest-demo-heartbeat
+task         = tasks_demo.periodic_heartbeat
+enabled      = true
+total_run_count >= 1
+```
+
+## Contrat réseau observé
+
+```text
+172.18.0.2:80   reachable=true  expected=true
+172.18.0.2:8000 reachable=false expected=false
+172.18.0.2:5432 reachable=false expected=false
+172.18.0.2:6379 reachable=false expected=false
+```
+
+Le runner n'accède donc directement ni à Gunicorn, ni à PostgreSQL, ni à Redis.
+
+## Incident du run #1
+
+Le run #1 (`34097304269`) avait échoué uniquement parce que `django-celery-beat` n'avait pas encore synchronisé `total_run_count` vers PostgreSQL dans la fenêtre de validation. Les diagnostics prouvaient déjà que Beat publiait `periodic_heartbeat` et que le worker l'exécutait.
+
+Le correctif appliqué est :
 
 ```python
-CELERY_BEAT_SYNC_EVERY = int(os.getenv("CELERY_BEAT_SYNC_EVERY", "1"))
+CELERY_BEAT_SYNC_EVERY = 1
 ```
 
-Le DatabaseScheduler doit ainsi synchroniser son état persistant après chaque tâche publiée, ce qui rend `total_run_count` observable de façon déterministe dans la fenêtre E2E.
+Le run #2 a ensuite validé le contrat complet.
 
-## Vault éphémère
-
-Le harness génère trois secrets aléatoires uniquement pour le run CI :
+## Artifact de preuves RC-10
 
 ```text
-vault_postgresql_password
-vault_django_secret_key
-vault_redis_password
+name      : ansible-django-postgresql-redis-celery-rc10-34097929297
+artifact  : 10009418965
+size      : 6624 bytes
+digest    : sha256:7f6cbfb05178bc0f9f81f7146bf3843ebc440df9391ac82d13403df01e09db46
+created   : 2026-09-07T07:59:33Z
+expires   : 2026-09-21T07:59:32Z
 ```
 
-Le Vault est chiffré avant le déploiement et les fichiers runtime (`hosts.yml`, `vault.yml`, `.vault_pass`) sont supprimés au cleanup.
-
-## Contrat réseau
-
-Le runner doit observer :
+URL de téléchargement GitHub Actions :
 
 ```text
-server1:80    reachable=true
-server1:8000  reachable=false
-server1:5432  reachable=false
-server1:6379  reachable=false
+https://github.com/tawounfouet/dst_sprint-17-auomatisation/actions/runs/34097929297/artifacts/10009418965
 ```
 
-## Hors périmètre RC-10
+Cet artifact contient les preuves RC-10 ; il ne s'agit pas encore du package final de livraison RC-12.
 
-La preuve stricte du deuxième `site.yml` :
+## Limites de RC-10
 
-```text
-server1 changed=0
-```
+RC-10 prouve l'intégration et le runtime sur une cible Ubuntu 24.04 jetable via `community.docker.docker`. Il ne prouve pas un déploiement SSH sur VPS public, TLS, DNS ou firewall cloud.
 
-reste RC-11.
+RC-10 ne prouve pas non plus encore l'idempotence stricte du `site.yml` complet. Cette preuve appartient à RC-11.
 
-Le ZIP final, le SHA-256, le package safety gate et l'artifact de livraison restent RC-12.
+## Suite
 
-## Critères de sortie
-
-```text
-harness Redis/Celery/Beat dédié                     ✅
-workflow GitHub Actions dédié                       ✅
-static gate réellement exécuté                      ✅ run #1
-premier déploiement complet                          ✅ run #1
-round-trip add(21,21) réel                          ✅ run #1
-round-trip database_probe réel                      ✅ run #1
-Beat publie periodic_heartbeat                      ✅ diagnostics run #1
-worker exécute periodic_heartbeat                   ✅ diagnostics run #1
-persistance DatabaseScheduler déterministe           ✅ correctif appliqué
-contrat réseau vérifié                               ⏳ run GREEN attendu
-run GitHub Actions final GREEN                       ⏳
-```
-
-RC-10 ne sera déclaré **GREEN** qu'après observation d'un nouveau run GitHub Actions réussi de bout en bout.
+**RC-11 — idempotence stricte** : réexécuter le même `site.yml` sur le même `server1`, exiger `changed=0`, puis refaire toute la validation runtime et le contrat réseau après ce second passage.

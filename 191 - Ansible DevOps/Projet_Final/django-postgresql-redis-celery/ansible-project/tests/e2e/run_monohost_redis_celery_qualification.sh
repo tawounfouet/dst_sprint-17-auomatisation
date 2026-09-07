@@ -26,9 +26,22 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
 }
 
+assert_zero_changes() {
+  local host="$1"
+  local logfile="$2"
+  local line changed
+  line="$(grep -E "^${host}[[:space:]]+:" "$logfile" | tail -n 1 || true)"
+  [[ -n "$line" ]] || fail "idempotence recap missing for $host"
+  changed="$(printf '%s\n' "$line" | sed -nE 's/.*changed=([0-9]+).*/\1/p')"
+  [[ -n "$changed" ]] || fail "unable to parse changed count for $host"
+  [[ "$changed" == "0" ]] || fail "$host is not idempotent: changed=$changed"
+  echo "IDEMPOTENCE PASS: $host changed=0"
+}
+
 assert_network_contract() {
   local server_ip="$1"
-  local output="$EVIDENCE_DIR/validation/redis-celery-network-$TIMESTAMP.txt"
+  local phase="${2:-runtime}"
+  local output="$EVIDENCE_DIR/validation/redis-celery-network-${phase}-$TIMESTAMP.txt"
   python3 - "$server_ip" <<'PY' | tee "$output"
 import socket
 import sys
@@ -110,10 +123,10 @@ if docker network inspect "$NETWORK" >/dev/null 2>&1; then
   fail "Docker network already exists: $NETWORK"
 fi
 
-echo "== RC-10 / static gate =="
+echo "== RC-10/11 / static gate =="
 bash tests/static_checks.sh
 
-echo "== RC-10 / provision one Ubuntu 24.04 systemd target =="
+echo "== RC-10/11 / provision one Ubuntu 24.04 systemd target =="
 docker pull "$TARGET_IMAGE"
 docker network create "$NETWORK" >/dev/null
 docker run --detach \
@@ -143,7 +156,7 @@ SERVER_IP="$(docker inspect -f "{{with index .NetworkSettings.Networks \"$NETWOR
 [[ -n "$SERVER_IP" ]] || fail "server1 Docker IP could not be resolved"
 printf 'server1=%s\n' "$SERVER_IP" | tee "$EVIDENCE_DIR/validation/redis-celery-address-$TIMESTAMP.txt"
 
-echo "== RC-10 / generate mono-host inventory =="
+echo "== RC-10/11 / generate mono-host inventory =="
 cat >"$INVENTORY" <<EOF
 ---
 all:
@@ -166,7 +179,7 @@ EOF
 
 ansible-inventory -i "$INVENTORY" --graph | tee "$EVIDENCE_DIR/validation/redis-celery-inventory-$TIMESTAMP.txt"
 
-echo "== RC-10 / generate encrypted ephemeral Vault =="
+echo "== RC-10/11 / generate encrypted ephemeral Vault =="
 umask 077
 DB_PASSWORD="$(openssl rand -hex 24)"
 DJANGO_SECRET_KEY="$(openssl rand -hex 32)"
@@ -243,6 +256,19 @@ echo "== RC-10 / service status =="
 } | tee "$EVIDENCE_DIR/validation/redis-celery-service-status-$TIMESTAMP.txt"
 
 echo "== RC-10 / network exposure contract =="
-assert_network_contract "$SERVER_IP"
+assert_network_contract "$SERVER_IP" "before-idempotence"
 
-echo "RC-10 qualification passed: static gate, mono-host deployment, PostgreSQL, Redis, Django, Celery Worker, Django Celery Beat, Nginx, async task round-trips and network contract are GREEN."
+echo "== RC-11 / second deployment with strict idempotence =="
+IDEMPOTENCE_LOG="$EVIDENCE_DIR/validation/redis-celery-idempotence-$TIMESTAMP.txt"
+set -o pipefail
+ansible-playbook -i "$INVENTORY" playbooks/site.yml \
+  --vault-password-file "$VAULT_PASS_FILE" 2>&1 | tee "$IDEMPOTENCE_LOG"
+assert_zero_changes server1 "$IDEMPOTENCE_LOG"
+
+echo "== RC-11 / runtime validation after second deployment =="
+bash scripts/validate_runtime.sh
+
+echo "== RC-11 / network contract after idempotence =="
+assert_network_contract "$SERVER_IP" "after-idempotence"
+
+echo "RC-11 qualification passed: RC-10 runtime remains GREEN after a second site.yml and server1 changed=0."

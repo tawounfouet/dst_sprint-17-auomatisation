@@ -15,7 +15,7 @@ permissions:
 jobs:
   redis-celery-monohost-e2e:
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 55
     env:
       PROJECT_DIR: 191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery/ansible-project
 
@@ -43,7 +43,7 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -Eeuo pipefail
-          MANIFEST="../evidence/validation/redis-celery-rc10-ci-${GITHUB_RUN_ID}.txt"
+          MANIFEST="../evidence/validation/redis-celery-rc11-ci-${GITHUB_RUN_ID}.txt"
           {
             echo "workflow=Ansible Django PostgreSQL Redis Celery Mono-Host Qualification"
             echo "run_id=${GITHUB_RUN_ID}"
@@ -61,7 +61,10 @@ jobs:
             echo "async_database_probe=SELECT 1"
             echo "beat_schedule=datascientest-demo-heartbeat"
             echo "network_contract=80:true,8000:false,5432:false,6379:false"
+            echo "idempotence_server1=changed=0"
+            echo "post_idempotence_runtime=green"
             echo "rc10=green"
+            echo "rc11=green"
           } | tee "$MANIFEST"
 
       - name: Upload failure diagnostics
@@ -75,11 +78,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload RC-10 qualification evidence
+      - name: Upload RC-11 qualification evidence
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ansible-django-postgresql-redis-celery-rc10-${{ github.run_id }}
+          name: ansible-django-postgresql-redis-celery-rc11-${{ github.run_id }}
           path: |
             191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery/evidence/logs/*.txt
             191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery/evidence/validation/*
