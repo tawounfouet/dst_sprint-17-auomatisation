@@ -1,0 +1,13 @@
+**/.env
+**/.env.dev
+**/.env.stg
+**/.env.prod
+**/.env.runtime
+**/.vault_pass
+**/.vault_pass*
+**/secret-values.txt
+**/secret-values.*
+*.pem
+*.key
+*.zip
+*.zip.sha256
