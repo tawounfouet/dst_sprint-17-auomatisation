@@ -14,32 +14,33 @@ NAMED VOLUME ATTACHMENT STABILITY                  ✅ GREEN
 POSTGRESQL DATA PRESERVATION                       ✅ GREEN
 REDIS DATA PRESERVATION                            ✅ GREEN
 STATIC VOLUME DATA PRESERVATION                    ✅ GREEN
-POST-CONVERGENCE FUNCTIONAL SMOKE                   ✅ GREEN
+POST-CONVERGENCE FUNCTIONAL SMOKE                  ✅ GREEN
 CI GREEN                                            ✅
 ```
 
-DC-14 ne se contente pas de vérifier que Docker Compose fonctionne. Le jalon qualifie la **stabilité réelle d'une seconde convergence Ansible complète** sur une cible STG-like déjà conforme.
-
-Le gate est désormais GREEN sur le commit applicatif testé `ec4be912013c625df6ea347c43c20cf650c66297`.
+DC-14 qualifie la **stabilité réelle d'une seconde convergence Ansible complète** sur une cible STG-like déjà conforme. Le jalon ne se limite ni à `docker compose up`, ni au seul compteur `changed=0` : il corrèle l'idempotence Ansible avec l'identité des conteneurs, l'image applicative, les volumes, les checksums de configuration et les données persistantes.
 
 ## Qualification canonique
 
 ```text
 Workflow : Ansible Django PostgreSQL Redis Celery Compose Strict Idempotence
-Run      : #5
-Run ID   : 34149470184
-Job ID   : 101828487085
-Commit   : ec4be912013c625df6ea347c43c20cf650c66297
+Run      : #6
+Run ID   : 34166358818
+Job ID   : 101878054495
+Commit   : 109d47d45b259967856a7c0aec5e571c8b80966d
 Result   : SUCCESS
 Runner   : GitHub-hosted Ubuntu 24.04.4 LTS
 Python   : 3.12.14
 Ansible  : ansible-core 2.20.8
+Docker   : 28.0.4
 ```
+
+Le runner expose initialement Docker Compose v2.38.2. Après qualification du rôle `docker_engine`, le paquet Docker officiel installé sur la cible de test rapporte Compose v5.5.1 et Buildx v0.37.0. Cette distinction est conservée pour ne pas confondre l'outillage préinstallé du runner avec celui réellement convergé par Ansible.
 
 La première convergence a matérialisé l'état attendu :
 
 ```text
-localhost : ok=54 changed=8 unreachable=0 failed=0 skipped=3
+localhost : ok=53 changed=8 unreachable=0 failed=0 skipped=3
 DC14_PASS1_PASS: first convergence changed=8
 DC14_DATA_SEED_PASS: PostgreSQL, Redis and static-volume probes written
 ```
@@ -47,20 +48,20 @@ DC14_DATA_SEED_PASS: PostgreSQL, Redis and static-volume probes written
 La seconde convergence, avec les mêmes entrées, a produit :
 
 ```text
-localhost : ok=54 changed=0 unreachable=0 failed=0 skipped=3
+localhost : ok=53 changed=0 unreachable=0 failed=0 skipped=3
 DC14_ANSIBLE_PASS: second full site convergence changed=0
 ```
 
 Puis l'ensemble des preuves fortes a été observé :
 
 ```text
-DC14_CONTAINER_PASS
-DC14_VOLUME_PASS
-DC14_CONFIG_PASS
-DC14_ARTIFACT_PASS
-DC14_DATA_PASS
-DC14_FUNCTIONAL_PASS
-DC14_COMPOSE_EQUIVALENCE
+DC14_CONTAINER_PASS: six long-running service container IDs and image IDs are unchanged
+DC14_VOLUME_PASS: PostgreSQL, Redis and static named-volume attachments are unchanged
+DC14_CONFIG_PASS: Compose files, service configs and .env.runtime checksums are unchanged
+DC14_ARTIFACT_PASS: application image identity/creation metadata unchanged; no rebuild occurred in the idempotence pair
+DC14_DATA_PASS: PostgreSQL, Redis and static-volume data survived pass 2
+DC14_FUNCTIONAL_PASS: post-idempotence STG health, Celery round-trips and host-port contract remain valid
+DC14_COMPOSE_EQUIVALENCE: runtime containers are stable; release/admin docker compose run --rm processes remain intentionally ephemeral but report changed=false when they make no state change
 DC14_STRICT_IDEMPOTENCE_PASS
 ```
 
@@ -80,14 +81,15 @@ Convergence 2, mêmes entrées
   → même image applicative digest-pinned
   → mêmes volumes nommés
   → mêmes checksums de configuration déployée
-  → données persistantes inchangées
+  → données persistantes préservées
+  → service toujours fonctionnel
 ```
 
-Pour Docker Compose, la notion est précisée : les six conteneurs long-running `nginx`, `web`, `db`, `redis`, `worker`, `beat` ne doivent pas être recréés. Les commandes administratives 12-Factor exécutées via `docker compose run --rm` restent volontairement des processus one-shot éphémères ; elles sont acceptées uniquement si leur seconde exécution ne modifie aucun état et si Ansible les comptabilise `changed=false`.
+Pour Docker Compose, les six conteneurs long-running `nginx`, `web`, `db`, `redis`, `worker`, `beat` ne doivent pas être recréés. Les commandes administratives 12-Factor exécutées via `docker compose run --rm` restent volontairement des processus one-shot éphémères ; elles sont acceptées uniquement si leur seconde exécution ne modifie aucun état et si Ansible les comptabilise `changed=false`.
 
 ## Préparation de la cible
 
-Le gate utilise un runner Ubuntu 24.04 éphémère et prépare d'abord le socle hôte avec les rôles actifs :
+Le gate utilise un runner Ubuntu 24.04 éphémère et prépare d'abord le socle hôte avec :
 
 ```text
 common
@@ -108,12 +110,18 @@ application image  → build unique + promotion repository@sha256
 
 Le registry localhost éphémère utilisé pour obtenir le digest applicatif est supprimé avant la paire de convergences.
 
-## STG sans build ni pull implicite
-
-DC-14 aligne le rôle `compose_stack` sur la politique déjà qualifiée dans DC-13 :
+Le digest applicatif observé dans le run canonique est :
 
 ```text
-DEV      → pull policy Compose native
+sha256:237a30e9349bcee697889f382d42a495287cdce6bcd0b001710f7edd2d42c467
+```
+
+## STG sans build ni pull implicite
+
+DC-14 conserve la politique qualifiée dans DC-13 :
+
+```text
+DEV      → politique Compose de développement
 STG/PROD → pull=never
 STG/PROD → build=never
 ```
@@ -126,21 +134,6 @@ registry/path/image@sha256:<64 hex>
 
 Ainsi, si l'une des deux convergences essayait de reconstruire ou de récupérer l'image applicative depuis le registry de promotion déjà supprimé, elle échouerait.
 
-Dans le run canonique, l'image a été construite et promue **une seule fois avant la paire**, puis son identité et son horodatage de création sont restés inchangés jusqu'à la fin du gate.
-
-## Correction healthcheck STG/PROD
-
-La qualification Ansible réelle a aussi fait apparaître une contrainte de runtime : les healthchecks du conteneur `web` interrogent `127.0.0.1:8000`. Les inventaires STG/PROD incluent donc explicitement :
-
-```text
-localhost
-127.0.0.1
-```
-
-parmi `DJANGO_ALLOWED_HOSTS`, en plus des noms DNS métier et des noms de services Compose.
-
-Ce changement ne publie aucun port interne ; il autorise seulement la requête loopback effectuée **à l'intérieur du conteneur**.
-
 ## Preuves de non-recréation
 
 Après la première convergence, le gate capture pour les six services :
@@ -152,9 +145,7 @@ configured image reference
 health state
 ```
 
-Après la seconde convergence, les snapshots doivent être strictement identiques.
-
-Le run canonique a confirmé :
+Après la seconde convergence, les snapshots doivent être strictement identiques. Le run canonique confirme :
 
 ```text
 DC14_CONTAINER_PASS: six long-running service container IDs and image IDs are unchanged
@@ -174,9 +165,7 @@ redis/entrypoint.sh
 .env.runtime
 ```
 
-Les checksums doivent rester identiques.
-
-Le fichier `.env.runtime` reste `root:root 0600`, n'est jamais affiché, et seul son digest est comparé. Le run canonique a confirmé :
+Le fichier `.env.runtime` reste `root:root 0600`, n'est jamais affiché, et seul son digest est comparé.
 
 ```text
 DC14_CONFIG_PASS: Compose files, service configs and .env.runtime checksums are unchanged
@@ -184,15 +173,7 @@ DC14_CONFIG_PASS: Compose files, service configs and .env.runtime checksums are 
 
 ## Preuves de conservation des volumes et données
 
-Le gate capture les volumes nommés montés sur :
-
-```text
-db
-redis
-web / staticfiles
-```
-
-Il écrit ensuite trois sondes persistantes :
+Le gate capture les volumes nommés montés sur `db`, `redis` et `web/staticfiles`, puis écrit trois sondes persistantes :
 
 ```text
 PostgreSQL → table dc14_idempotence_probe, marker=preserved
@@ -217,9 +198,7 @@ image Created timestamp
 repository@sha256
 ```
 
-et exige les mêmes métadonnées après la seconde convergence.
-
-Les trois processus applicatifs `web`, `worker`, `beat` continuent à pointer sur la même image préparée avant la paire. La preuve canonique est :
+et exige les mêmes métadonnées après la seconde convergence. `web`, `worker` et `beat` continuent à pointer sur la même image préparée avant la paire.
 
 ```text
 DC14_ARTIFACT_PASS: application image identity/creation metadata unchanged; no rebuild occurred in the idempotence pair
@@ -227,7 +206,7 @@ DC14_ARTIFACT_PASS: application image identity/creation metadata unchanged; no r
 
 ## Validation fonctionnelle après convergence 2
 
-Une seconde convergence parfaitement stable ne doit pas casser le service. Le gate réutilise donc la validation STG-like après le `changed=0` pour confirmer :
+Une convergence stable ne doit pas casser le service. Le gate réutilise donc la validation STG-like après le `changed=0` pour confirmer :
 
 ```text
 health database / redis / celery
@@ -246,13 +225,13 @@ DC14_FUNCTIONAL_PASS: post-idempotence STG health, Celery round-trips and host-p
 
 ## Root causes découvertes par DC-14
 
-DC-14 a révélé trois écarts que les qualifications fonctionnelles précédentes ne suffisaient pas à exposer.
+DC-14 a révélé plusieurs écarts qu'une simple qualification fonctionnelle ne suffisait pas à exposer.
 
 ### 1. Projet Compose différent pour les one-off
 
 Les commandes `docker compose run --rm` utilisaient initialement le nom de projet implicite du répertoire alors que `community.docker.docker_compose_v2` utilisait explicitement `datascientest`. Les processus de migration pouvaient donc rejoindre un réseau Compose différent de celui de `db` et `redis`.
 
-Correction : toutes les opérations one-shot utilisent désormais explicitement :
+Correction : toutes les opérations one-shot utilisent explicitement :
 
 ```text
 --project-name datascientest
@@ -267,46 +246,51 @@ root:root
 0600
 ```
 
-La correction a porté sur le **test**, pas sur la sécurité : seules les opérations de contrôle qui doivent lire ce fichier passent par un contexte privilégié. Les permissions du secret n'ont pas été relâchées.
+La correction a porté sur le **test**, pas sur la sécurité : seules les opérations de contrôle devant lire ce fichier sont exécutées avec les privilèges nécessaires. Les permissions du secret n'ont pas été relâchées.
 
-### 3. Drift de mode sur `redis/entrypoint.sh`
+### 3. Oscillation de mode sur `redis/entrypoint.sh`
 
-Le source Git du fichier `docker/redis/entrypoint.sh` est versionné en mode exécutable `100755`. Le déploiement récursif Ansible utilise `mode: preserve`, mais une tâche suivante forçait le fichier à `0555`.
-
-Chaque nouvelle convergence provoquait donc le cycle :
+Le déploiement récursif Ansible conservait le mode du fichier source puis une tâche supplémentaire modifiait à nouveau explicitement son mode. À chaque convergence, les deux tâches pouvaient se répondre et produire un faux drift permanent :
 
 ```text
-copy preserve : 0555 → 0755  => changed
-file task     : 0755 → 0555  => changed
+copy mode: preserve → changement de mode
+file/chmod          → changement inverse
+PASS 2              → changed=2
 ```
 
-Le PASS 2 restait alors à `changed=2` malgré une stack fonctionnellement correcte.
+La correction finale évite complètement ce couplage :
 
-Correction : le rôle converge désormais vers `0755`, cohérent avec le mode Git source. Le run canonique suivant a obtenu `changed=0`.
+```text
+Compose Redis entrypoint → /bin/sh /usr/local/bin/datascientest-redis-entrypoint
+Ansible                  → aucune tâche chmod dédiée après la copie récursive
+```
+
+Le script n'a donc plus besoin d'être rendu exécutable par une seconde tâche ; son contenu et son mode restent stables après la copie. Le run #6 obtient réellement `changed=0` sur la seconde convergence.
 
 ## Régressions sur le même commit qualifié
 
-Le commit `ec4be912013c625df6ea347c43c20cf650c66297` a également passé les gates de régression suivants :
+Le commit `109d47d45b259967856a7c0aec5e571c8b80966d` a passé simultanément les quatre gates :
 
 ```text
 Static Gate
-Run ID 34149470178
-Job ID 101828487082
+Run #17
+Run ID 34166358846
 SUCCESS
 
 DEV Full E2E
-Run ID 34149470187
-Job ID 101828487313
+Run #10
+Run ID 34166358817
 SUCCESS
 
 STG-like E2E
-Run ID 34149470152
-Job ID 101828486901
+Run #9
+Run ID 34166358816
 SUCCESS
 
 Strict Idempotence
-Run ID 34149470184
-Job ID 101828487085
+Run #6
+Run ID 34166358818
+Job ID 101878054495
 SUCCESS
 ```
 
@@ -336,7 +320,7 @@ car la qualification installe/configure Docker et modifie le firewall de l'hôte
 
 Le statut GREEN démontre une convergence réelle sur un **runner GitHub-hosted Ubuntu 24.04 éphémère**, avec Ansible exécuté localement sur cette cible de qualification.
 
-Il ne constitue pas encore une preuve de déploiement sur un VPS distant via SSH, ni une qualification de production réelle, de registry distant, de TLS public ou de haute disponibilité multi-hôte.
+Il ne constitue pas une preuve de déploiement sur un VPS distant via SSH, ni une qualification de production réelle, de registry distant, de TLS public ou de haute disponibilité multi-hôte.
 
 ## Verdict
 
