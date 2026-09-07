@@ -1,0 +1,62 @@
+name: Ansible Django PostgreSQL Redis Celery Compose Static Gate
+
+on:
+  push:
+    branches:
+      - feat/ansible-django-postgresql-redis-celery-docker-compose
+    paths:
+      - "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/**"
+      - ".github/workflows/ansible-django-postgresql-redis-celery-docker-compose-static.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dc11-static-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/django-app/requirements.txt"
+
+      - name: Install Python and Ansible dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "ansible-core>=2.18,<2.21" PyYAML
+          python -m pip install -r "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/django-app/requirements.txt"
+
+      - name: Install Ansible collections
+        working-directory: "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/ansible-project"
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ansible-galaxy collection install -r requirements.yml
+
+      - name: Show static-gate tool versions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python --version
+          ansible-playbook --version | head -n 2
+          docker --version
+          docker compose version
+          dockerd --version || true
+
+      - name: Run DC-11 static gate
+        working-directory: "191 - Ansible DevOps/Projet_Final/django-postgresql-redis-celery-docker-compose/ansible-project"
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chmod +x tests/static_checks.sh scripts/*.sh scripts/secret_hygiene.py tests/validate_compose_config.py
+          ./tests/static_checks.sh

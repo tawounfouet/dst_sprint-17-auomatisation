@@ -4,15 +4,25 @@ set -Eeuo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
 DJANGO_DIR="$ROOT_DIR/django-app"
-cd "$PROJECT_DIR"
+DOCKER_DIR="$ROOT_DIR/docker"
+TMP_DIR="$(mktemp -d)"
+CREATED_VAULTS=()
+
+cleanup() {
+  for vault in "${CREATED_VAULTS[@]:-}"; do
+    [[ -n "$vault" ]] && rm -f "$vault"
+  done
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
 
 fail() {
-  echo "ERROR: $*" >&2
+  echo "STATIC_GATE_FAIL: $*" >&2
   exit 1
 }
 
 pass() {
-  echo "OK: $*"
+  echo "STATIC_GATE_PASS: $*"
 }
 
 require_file() {
@@ -23,73 +33,60 @@ require_dir() {
   [[ -d "$1" ]] || fail "required directory missing: $1"
 }
 
-echo "== Structure =="
+cd "$PROJECT_DIR"
+
+echo "== DC-11 structure =="
 for file in \
   ansible.cfg \
   requirements.yml \
   playbooks/site.yml \
-  playbooks/validate.yml \
-  inventories/prod/hosts.example.yml \
-  inventories/prod/group_vars/all.yml \
-  inventories/prod/group_vars/vault.example.yml \
-  inventories/prod/host_vars/server1.example.yml \
-  scripts/preflight.sh \
-  scripts/deploy.sh \
-  scripts/validate_runtime.sh \
-  scripts/package.sh; do
+  playbooks/docker_engine.yml \
+  playbooks/runtime_hardening.yml \
+  roles/docker_engine/tasks/main.yml \
+  roles/docker_runtime_hardening/tasks/main.yml \
+  roles/docker_runtime_hardening/templates/daemon.json.j2 \
+  roles/docker_runtime_hardening/templates/docker-user-firewall.sh.j2 \
+  roles/compose_stack/tasks/main.yml \
+  scripts/secret_hygiene.py \
+  tests/validate_compose_config.py \
+  "$DJANGO_DIR/Dockerfile" \
+  "$DJANGO_DIR/requirements.txt" \
+  "$DJANGO_DIR/config/settings/base.py" \
+  "$DJANGO_DIR/config/settings/database.py" \
+  "$DJANGO_DIR/config/settings/dev.py" \
+  "$DJANGO_DIR/config/settings/stg.py" \
+  "$DJANGO_DIR/config/settings/prod.py" \
+  "$DJANGO_DIR/tests/test_settings_database_policy.py" \
+  "$DJANGO_DIR/tests/test_settings_runtime_policy.py" \
+  "$DJANGO_DIR/tasks_demo/tests/test_api.py" \
+  "$DOCKER_DIR/compose.yml" \
+  "$DOCKER_DIR/compose.dev.yml" \
+  "$DOCKER_DIR/compose.stg.yml" \
+  "$DOCKER_DIR/compose.prod.yml" \
+  "$DOCKER_DIR/nginx/default.conf" \
+  "$DOCKER_DIR/redis/entrypoint.sh"; do
   require_file "$file"
 done
 
-for role in common postgresql redis django_app celery celery_beat nginx; do
+for role in common docker_engine docker_runtime_hardening compose_stack; do
   require_dir "roles/$role"
   require_file "roles/$role/tasks/main.yml"
   require_file "roles/$role/defaults/main.yml"
   require_file "roles/$role/meta/main.yml"
 done
 
-for file in \
-  roles/postgresql/handlers/main.yml \
-  roles/postgresql/templates/99-datascientest.conf.j2 \
-  roles/redis/handlers/main.yml \
-  roles/django_app/handlers/main.yml \
-  roles/django_app/templates/django.env.j2 \
-  roles/django_app/templates/django-gunicorn.service.j2 \
-  roles/celery/handlers/main.yml \
-  roles/celery/templates/celery-worker.service.j2 \
-  roles/celery_beat/handlers/main.yml \
-  roles/celery_beat/templates/celery-beat.service.j2 \
-  roles/nginx/handlers/main.yml \
-  roles/nginx/templates/django.conf.j2; do
-  require_file "$file"
+for env_name in dev stg prod; do
+  require_file "inventories/$env_name/hosts.example.yml"
+  require_file "inventories/$env_name/group_vars/all.yml"
+  require_file "inventories/$env_name/group_vars/vault.example.yml"
 done
-pass "Ansible project structure"
+pass "project structure"
 
-echo "== Django scaffold =="
-for file in \
-  "$DJANGO_DIR/manage.py" \
-  "$DJANGO_DIR/requirements.txt" \
-  "$DJANGO_DIR/config/__init__.py" \
-  "$DJANGO_DIR/config/celery.py" \
-  "$DJANGO_DIR/config/settings.py" \
-  "$DJANGO_DIR/config/urls.py" \
-  "$DJANGO_DIR/config/wsgi.py" \
-  "$DJANGO_DIR/health/__init__.py" \
-  "$DJANGO_DIR/health/apps.py" \
-  "$DJANGO_DIR/health/views.py" \
-  "$DJANGO_DIR/health/urls.py" \
-  "$DJANGO_DIR/tasks_demo/apps.py" \
-  "$DJANGO_DIR/tasks_demo/tasks.py" \
-  "$DJANGO_DIR/tasks_demo/views.py" \
-  "$DJANGO_DIR/tasks_demo/urls.py" \
-  "$DJANGO_DIR/tasks_demo/management/commands/ensure_demo_periodic_task.py" \
-  "$DJANGO_DIR/tasks_demo/tests/test_tasks.py" \
-  "$DJANGO_DIR/tasks_demo/tests/test_api.py" \
-  "$DJANGO_DIR/tests/test_health.py"; do
-  require_file "$file"
-done
-
+echo "== Python dependency contract =="
 for dependency in \
   'Django>=5.2,<5.3' \
+  'djangorestframework>=3.16,<4' \
+  'django-environ>=0.12,<1' \
   'gunicorn>=23,<24' \
   'psycopg[binary]>=3.2,<4' \
   'celery>=5.5,<6' \
@@ -98,16 +95,16 @@ for dependency in \
   grep -Fq "$dependency" "$DJANGO_DIR/requirements.txt" \
     || fail "Python dependency contract missing: $dependency"
 done
-pass "Django, Celery, Redis and Beat scaffold"
+pass "Django/DRF/Celery dependency bounds"
 
 echo "== Bash syntax =="
 while IFS= read -r -d '' script; do
   bash -n "$script" || fail "invalid Bash syntax: $script"
-done < <(find scripts tests -type f -name '*.sh' -print0)
+done < <(find scripts tests "$DOCKER_DIR" -type f -name '*.sh' -print0)
 pass "Bash syntax"
 
 echo "== Python syntax =="
-python3 - "$DJANGO_DIR" <<'PY'
+python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
 import ast
 import sys
@@ -116,11 +113,10 @@ root = Path(sys.argv[1])
 for path in sorted(root.rglob("*.py")):
     ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 PY
-pass "Python source parses with ast"
+pass "Python AST parse"
 
 echo "== YAML syntax =="
-if python3 -c 'import yaml' >/dev/null 2>&1; then
-  python3 - "$PROJECT_DIR" <<'PY'
+python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
 import sys
 import yaml
@@ -132,196 +128,247 @@ for path in sorted(list(root.rglob("*.yml")) + list(root.rglob("*.yaml"))):
     with path.open(encoding="utf-8") as handle:
         yaml.safe_load(handle)
 PY
-  pass "YAML parses with PyYAML"
-else
-  echo "SKIP: PyYAML is not installed; YAML parse check not executed."
-fi
+pass "YAML parse"
 
-echo "== Mono-host inventory contract =="
-grep -Fq '    app:' inventories/prod/hosts.example.yml \
-  || fail "app inventory group missing"
-grep -Fq '    database:' inventories/prod/hosts.example.yml \
-  || fail "database inventory group missing"
-server1_count="$(grep -Ec '^[[:space:]]+server1:[[:space:]]*$' inventories/prod/hosts.example.yml || true)"
-[[ "$server1_count" -eq 2 ]] \
-  || fail "server1 must appear exactly once in app and once in database groups"
-if grep -Eq '(^|[[:space:]])(app1|db1):' inventories/prod/hosts.example.yml; then
-  fail "legacy app1/db1 topology remains in hosts.example.yml"
-fi
-pass "server1 mono-host inventory"
+echo "== Secret hygiene =="
+python3 scripts/secret_hygiene.py repo
+pass "repository secret hygiene"
 
-echo "== site.yml orchestration order =="
-python3 - "playbooks/site.yml" <<'PY'
+echo "== Source invariants =="
+python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
+import re
 import sys
+import yaml
 
-text = Path(sys.argv[1]).read_text(encoding="utf-8")
+root = Path(sys.argv[1])
+django = root / "django-app"
+docker = root / "docker"
+ansible = root / "ansible-project"
+
+def require(condition, message):
+    if not condition:
+        raise SystemExit(f"STATIC_GATE_FAIL: {message}")
+
+requirements = (django / "requirements.txt").read_text(encoding="utf-8")
+require("djangorestframework" in requirements, "DRF dependency missing")
+require("django-environ" in requirements, "django-environ dependency missing")
+
+base = (django / "config/settings/base.py").read_text(encoding="utf-8")
+database = (django / "config/settings/database.py").read_text(encoding="utf-8")
+stg = (django / "config/settings/stg.py").read_text(encoding="utf-8")
+prod = (django / "config/settings/prod.py").read_text(encoding="utf-8")
+require('"rest_framework"' in base, "rest_framework missing from INSTALLED_APPS")
+require('"django_celery_beat"' in base, "django_celery_beat missing from INSTALLED_APPS")
+require("DATABASE_URL must use PostgreSQL" in database, "PostgreSQL-only policy missing")
+require("django.db.backends.sqlite3" in database, "DEV SQLite fallback missing")
+require("required_postgresql_database" in stg and "required_postgresql_database" in prod, "STG/PROD PostgreSQL enforcement missing")
+require("DJANGO_DEBUG=true is forbidden" in stg and "DJANGO_DEBUG=true is forbidden" in prod, "STG/PROD DEBUG fail-fast missing")
+require("except" not in re.sub(r"#.*", "", database), "database policy must not silently catch PostgreSQL failures and fall back")
+
+api_views = (django / "tasks_demo/views.py").read_text(encoding="utf-8")
+serializers = (django / "tasks_demo/serializers.py").read_text(encoding="utf-8")
+require("@api_view" in api_views and "Response" in api_views, "task API must use DRF views")
+require("serializers.Serializer" in serializers, "DRF serializers missing")
+
+Dockerfile = (django / "Dockerfile").read_text(encoding="utf-8")
+require(Dockerfile.count("FROM ") >= 2, "Dockerfile must remain multi-stage")
+require("USER app" in Dockerfile, "Docker runtime must be non-root")
+require("STOPSIGNAL SIGTERM" in Dockerfile, "Dockerfile SIGTERM contract missing")
+require("ENTRYPOINT" in Dockerfile, "Docker entrypoint contract missing")
+require("DJANGO_SECRET_KEY=" not in Dockerfile and "POSTGRES_PASSWORD=" not in Dockerfile and "REDIS_PASSWORD=" not in Dockerfile, "Dockerfile must not embed secrets")
+
+compose_raw = yaml.safe_load((docker / "compose.yml").read_text(encoding="utf-8"))
+services = compose_raw.get("services", {})
+require(set(services) == {"nginx", "web", "db", "redis", "worker", "beat"}, "base Compose must define six canonical services")
+require(compose_raw.get("networks", {}).get("backend", {}).get("internal") is True, "backend network must be internal")
+for name in ("web", "db", "redis", "worker", "beat"):
+    require(not services[name].get("ports"), f"{name} must not publish ports in base Compose")
+for name in ("web", "worker", "beat", "redis", "nginx"):
+    require(services[name].get("read_only") is True, f"{name} read_only hardening missing")
+for name in ("web", "worker", "beat", "redis", "nginx"):
+    require("ALL" in (services[name].get("cap_drop") or []), f"{name} cap_drop ALL missing")
+for name, service in services.items():
+    require(service.get("healthcheck"), f"{name} healthcheck missing")
+    require(service.get("logging", {}).get("driver") == "json-file" or name in {"web", "worker", "beat"}, f"{name} json-file logging missing")
+
+worker_command = " ".join(map(str, services["worker"].get("command") or []))
+beat_command = " ".join(map(str, services["beat"].get("command") or []))
+require("worker" in worker_command and "-B" not in worker_command and "--beat" not in worker_command, "worker/Beat separation broken")
+require("beat" in beat_command and "DatabaseScheduler" in beat_command, "Beat DatabaseScheduler contract missing")
+
+site = (ansible / "playbooks/site.yml").read_text(encoding="utf-8")
 markers = [
     "- role: common",
-    "- role: postgresql",
-    "- role: redis",
-    "- role: django_app",
-    "- role: celery",
-    "- role: celery_beat",
-    "- role: nginx",
+    "- role: docker_engine",
+    "- role: docker_runtime_hardening",
+    "- role: compose_stack",
 ]
 positions = []
 for marker in markers:
-    pos = text.find(marker)
-    if pos < 0:
-        raise SystemExit(f"site.yml missing role marker: {marker}")
+    pos = site.find(marker)
+    require(pos >= 0, f"site.yml missing active role {marker}")
     positions.append(pos)
-if positions != sorted(positions):
-    raise SystemExit("site.yml role ordering does not satisfy dependency contract")
+require(positions == sorted(positions), "site.yml active role ordering is invalid")
+for legacy in ("postgresql", "redis", "django_app", "celery", "celery_beat", "nginx"):
+    require(f"- role: {legacy}" not in site, f"legacy native role {legacy} must not be active")
+
+hardening_tasks = (ansible / "roles/docker_runtime_hardening/tasks/main.yml").read_text(encoding="utf-8")
+firewall_template = (ansible / "roles/docker_runtime_hardening/templates/docker-user-firewall.sh.j2").read_text(encoding="utf-8")
+daemon_template = (ansible / "roles/docker_runtime_hardening/templates/daemon.json.j2").read_text(encoding="utf-8")
+require("dockerd" in hardening_tasks and "--validate" in hardening_tasks, "dockerd validation gate missing")
+require("DOCKER-USER" in firewall_template and "conntrack" in firewall_template and "ctorigdstport" in firewall_template, "DOCKER-USER original-port policy missing")
+require('"live-restore"' in daemon_template and '"firewall-backend"' in daemon_template, "daemon hardening template incomplete")
+
+for env_name in ("stg", "prod"):
+    overlay = (docker / f"compose.{env_name}.yml").read_text(encoding="utf-8")
+    require("build:" not in overlay, f"{env_name} overlay must not build application")
+    require("config.settings." + env_name in overlay, f"{env_name} settings module missing")
+    require("DJANGO_DEBUG: \"false\"" in overlay, f"{env_name} DEBUG must be false")
+
+print("STATIC_SOURCE_INVARIANTS_PASS")
 PY
-pass "common -> postgresql -> redis -> django_app -> celery -> celery_beat -> nginx"
+pass "source invariants"
 
-echo "== Runtime configuration invariants =="
-grep -Fq 'django_venv_dir: "{{ django_install_dir }}/.venv"' roles/django_app/defaults/main.yml \
-  || fail "Django venv must be named .venv"
-grep -Fq -- '- venv' roles/django_app/tasks/main.yml \
-  || fail "Django role must create the environment with python3 -m venv"
-if grep -REn '(^|[[:space:]-])virtualenv([[:space:]]|$)' roles/django_app/defaults roles/django_app/tasks; then
-  fail "virtualenv must not be used by the Django runtime role"
-fi
+echo "== Django unit and API tests =="
+(
+  cd "$DJANGO_DIR"
+  env -u DATABASE_URL \
+    APPLICATION_ENV=dev \
+    DJANGO_SETTINGS_MODULE=config.settings.dev \
+    DJANGO_SECRET_KEY=STATIC_CHECK_ONLY_DJANGO_SECRET_KEY_0123456789abcdefghijklmnopqrstuvwxyzABCDEFG \
+    python manage.py test tests tasks_demo.tests --verbosity 1
+)
+pass "Django settings, health, tasks and DRF tests"
 
-grep -Rq 'scram-sha-256' roles/postgresql/defaults roles/postgresql/tasks roles/postgresql/templates \
-  || fail "PostgreSQL SCRAM contract missing"
-if grep -REn '(^|[[:space:]])trust([[:space:]]|$)' roles/postgresql/defaults roles/postgresql/tasks roles/postgresql/templates roles/postgresql/handlers; then
-  fail "PostgreSQL runtime configuration must not use trust authentication"
-fi
-if grep -REn '0\.0\.0\.0/0|::/0' roles/postgresql/defaults roles/postgresql/tasks roles/postgresql/templates; then
-  fail "PostgreSQL runtime configuration contains a broad CIDR"
-fi
-grep -Fq 'postgresql_host: 127.0.0.1' inventories/prod/group_vars/all.yml \
-  || fail "PostgreSQL application host must be 127.0.0.1"
-grep -Fq 'postgresql_listen_addresses: "127.0.0.1"' inventories/prod/group_vars/all.yml \
-  || fail "PostgreSQL must listen on 127.0.0.1 in mono-host prod vars"
+echo "== Ansible collection contract =="
+command -v ansible-playbook >/dev/null 2>&1 || fail "ansible-playbook is required for DC-11"
+command -v ansible-galaxy >/dev/null 2>&1 || fail "ansible-galaxy is required for DC-11"
+ansible-galaxy collection list community.docker >/dev/null 2>&1 \
+  || fail "community.docker is not installed; run ansible-galaxy collection install -r requirements.yml"
+pass "Ansible + community.docker available"
 
-grep -Fq 'redis_bind_address: 127.0.0.1' inventories/prod/group_vars/all.yml \
-  || fail "Redis must bind to 127.0.0.1"
-grep -Fq 'redis_protected_mode: "yes"' inventories/prod/group_vars/all.yml \
-  || fail "Redis protected mode must be enabled"
-grep -Fq 'REDISCLI_AUTH:' roles/redis/tasks/main.yml \
-  || fail "Redis PING must pass authentication via REDISCLI_AUTH"
-grep -Fq 'requirepass {{ redis_password }}' roles/redis/tasks/main.yml \
-  || fail "Redis requirepass contract missing"
-if grep -REn 'redis_bind_address:.*0\.0\.0\.0|line:.*bind[[:space:]]+0\.0\.0\.0' roles/redis inventories/prod/group_vars/all.yml; then
-  fail "Redis must never bind to 0.0.0.0 in this topology"
-fi
-if grep -REn 'redis_protected_mode:.*no' roles/redis inventories/prod/group_vars/all.yml; then
-  fail "Redis protected mode must not be disabled"
-fi
-if grep -En '^[[:space:]]*-[[:space:]]*-a[[:space:]]*$|redis-cli.*[[:space:]]-a[[:space:]]' roles/redis/tasks/main.yml; then
-  fail "Redis password must not be passed through redis-cli -a"
-fi
-
-grep -Fq 'django_gunicorn_bind: 127.0.0.1:8000' inventories/prod/group_vars/all.yml \
-  || fail "Gunicorn must remain bound to 127.0.0.1:8000"
-if grep -Eq '^[[:space:]]*django_allowed_hosts:[[:space:]]*"?\*"?[[:space:]]*$' inventories/prod/group_vars/all.yml \
-  || grep -Eq "^[[:space:]]*django_allowed_hosts:[[:space:]]*'\\*'[[:space:]]*$" inventories/prod/group_vars/all.yml; then
-  fail "DJANGO_ALLOWED_HOSTS wildcard is not accepted"
-fi
-pass "localhost-only PostgreSQL/Redis/Gunicorn and auth hardening"
-
-echo "== Celery Worker and Beat contracts =="
-grep -Fq 'EnvironmentFile={{ django_environment_file }}' roles/celery/templates/celery-worker.service.j2 \
-  || fail "Celery worker must load the Django EnvironmentFile"
-grep -Fq 'ExecStart={{ django_venv_dir }}/bin/celery' roles/celery/templates/celery-worker.service.j2 \
-  || fail "Celery worker must execute from the Django .venv"
-grep -Fq ' worker ' roles/celery/templates/celery-worker.service.j2 \
-  || fail "Celery worker command missing"
-if grep -Eq 'worker[[:space:]]+-B([[:space:]]|$)|--beat([[:space:]]|$)' roles/celery/templates/celery-worker.service.j2; then
-  fail "Celery Worker must not embed Beat with -B/--beat"
-fi
-
-grep -Fq 'EnvironmentFile={{ django_environment_file }}' roles/celery_beat/templates/celery-beat.service.j2 \
-  || fail "Celery Beat must load the Django EnvironmentFile"
-grep -Fq 'ExecStart={{ django_venv_dir }}/bin/celery' roles/celery_beat/templates/celery-beat.service.j2 \
-  || fail "Celery Beat must execute from the Django .venv"
-grep -Fq 'django_celery_beat.schedulers:DatabaseScheduler' roles/celery_beat/templates/celery-beat.service.j2 \
-  || fail "Celery Beat systemd unit must use DatabaseScheduler"
-grep -Fq '"django_celery_beat"' "$DJANGO_DIR/config/settings.py" \
-  || fail "django_celery_beat must be installed in Django"
-grep -Fq 'CELERY_BEAT_SCHEDULER' "$DJANGO_DIR/config/settings.py" \
-  || fail "Django Celery Beat scheduler setting missing"
-grep -Fq 'datascientest-demo-heartbeat' "$DJANGO_DIR/tasks_demo/management/commands/ensure_demo_periodic_task.py" \
-  || fail "demo PeriodicTask contract missing"
-grep -Fq 'tasks_demo.periodic_heartbeat' "$DJANGO_DIR/tasks_demo/tasks.py" \
-  || fail "periodic heartbeat task missing"
-pass "separate Celery Worker and Django Celery Beat services"
-
-echo "== Health and async validation contracts =="
-grep -Fq 'health/redis/' "$DJANGO_DIR/health/urls.py" \
-  || fail "/health/redis/ endpoint missing"
-grep -Fq 'health/celery/' "$DJANGO_DIR/health/urls.py" \
-  || fail "/health/celery/ endpoint missing"
-grep -Fq 'api/tasks/add/' "$DJANGO_DIR/tasks_demo/urls.py" \
-  || fail "add task endpoint missing"
-grep -Fq 'api/tasks/database-probe/' "$DJANGO_DIR/tasks_demo/urls.py" \
-  || fail "database probe endpoint missing"
-grep -Fq 'total_run_count' playbooks/validate.yml \
-  || fail "Beat execution validation contract missing"
-if ! grep -Eq 'result.*(\|[[:space:]]*int[[:space:]]*)?==[[:space:]]*42' playbooks/validate.yml; then
-  fail "Celery add(21,21) result validation missing"
-fi
-pass "Redis, Celery, async task and Beat validation contracts"
-
-echo "== Secret and sensitive-file guards =="
-if git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  tracked="$(git -C "$PROJECT_DIR" ls-files -- .)"
-  if printf '%s\n' "$tracked" | grep -E '(^|/)\.vault_pass[^/]*$|(^|/)inventories/prod/hosts\.yml$|(^|/)inventories/prod/group_vars/vault\.yml$|(^|/)inventories/prod/host_vars/server1\.yml$|(^|/)(id_rsa|id_ed25519)[^/]*$|\.(pem|key)$'; then
-    fail "sensitive runtime file is tracked by Git"
+prepare_static_vault() {
+  local env_name="$1"
+  local vault="inventories/$env_name/group_vars/vault.yml"
+  if [[ -f "$vault" ]]; then
+    return 0
   fi
-  pass "No forbidden sensitive runtime files tracked"
-else
-  echo "SKIP: Git worktree not available for tracked-file check."
-fi
-
-echo "== Ansible syntax =="
-TEMP_VAULT_CREATED=0
-cleanup() {
-  if [[ "$TEMP_VAULT_CREATED" -eq 1 ]]; then
-    rm -f inventories/prod/group_vars/vault.yml
-  fi
-}
-trap cleanup EXIT
-
-if command -v ansible-playbook >/dev/null 2>&1; then
-  if command -v ansible-galaxy >/dev/null 2>&1 && ! ansible-galaxy collection list community.postgresql >/dev/null 2>&1; then
-    fail "community.postgresql is not installed; run ansible-galaxy collection install -r requirements.yml"
-  fi
-
-  VAULT_ARGS=()
-  CAN_CHECK_SITE=1
-  if [[ -f inventories/prod/group_vars/vault.yml ]]; then
-    if [[ -n "${ANSIBLE_VAULT_PASSWORD_FILE:-}" ]]; then
-      VAULT_ARGS+=(--vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE")
-    elif [[ -f .vault_pass ]]; then
-      VAULT_ARGS+=(--vault-password-file .vault_pass)
-    elif head -n 1 inventories/prod/group_vars/vault.yml | grep -q '^\$ANSIBLE_VAULT;'; then
-      CAN_CHECK_SITE=0
-      echo "SKIP: site.yml syntax-check requires a Vault password for the encrypted vault.yml."
-    fi
-  else
-    umask 077
-    cat > inventories/prod/group_vars/vault.yml <<'EOF'
+  umask 077
+  cat > "$vault" <<EOF
 ---
-vault_postgresql_password: STATIC_CHECK_ONLY_NOT_A_SECRET_123456
-vault_django_secret_key: STATIC_CHECK_ONLY_NOT_A_SECRET_0123456789_ABCDEF
-vault_redis_password: STATIC_CHECK_ONLY_NOT_A_SECRET_REDIS_123456
+vault_environment: $env_name
+vault_secret_generation: 1
+vault_django_secret_key: STATIC_CHECK_ONLY_DJANGO_SECRET_KEY_0123456789abcdefghijklmnopqrstuvwxyzABCDEFG
+vault_postgresql_password: STATIC_CHECK_ONLY_POSTGRES_1234567890abcdef
+vault_redis_password: STATIC_CHECK_ONLY_REDIS_1234567890abcdefghi
 EOF
-    TEMP_VAULT_CREATED=1
-  fi
+  CREATED_VAULTS+=("$vault")
+}
 
-  if [[ "$CAN_CHECK_SITE" -eq 1 ]]; then
-    ansible-playbook -i inventories/prod/hosts.example.yml playbooks/site.yml --syntax-check "${VAULT_ARGS[@]}"
-    pass "site.yml syntax-check"
+echo "== Ansible syntax-check =="
+for env_name in dev stg prod; do
+  prepare_static_vault "$env_name"
+  vault="inventories/$env_name/group_vars/vault.yml"
+  vault_args=()
+  if head -n 1 "$vault" | grep -q '^\$ANSIBLE_VAULT;'; then
+    if [[ -n "${ANSIBLE_VAULT_PASSWORD_FILE:-}" ]]; then
+      vault_args+=(--vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE")
+    elif [[ -f .vault_pass ]]; then
+      vault_args+=(--vault-password-file .vault_pass)
+    else
+      echo "STATIC_GATE_SKIP: encrypted $env_name vault present without password; site.yml syntax-check skipped for this environment"
+      continue
+    fi
   fi
-  ansible-playbook -i inventories/prod/hosts.example.yml playbooks/validate.yml --syntax-check
-  pass "validate.yml syntax-check"
+  ansible-playbook \
+    -i "inventories/$env_name/hosts.example.yml" \
+    playbooks/site.yml \
+    --syntax-check \
+    -e "deployment_environment=$env_name" \
+    "${vault_args[@]}"
+done
+ansible-playbook -i inventories/dev/hosts.example.yml playbooks/docker_engine.yml --syntax-check
+ansible-playbook -i inventories/dev/hosts.example.yml playbooks/runtime_hardening.yml --syntax-check -e deployment_environment=dev
+pass "Ansible syntax-check"
+
+echo "== Docker Compose rendered configuration =="
+command -v docker >/dev/null 2>&1 || fail "docker CLI is required for DC-11"
+docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 plugin is required for DC-11"
+
+write_compose_env() {
+  local env_name="$1"
+  local env_file="$2"
+  local image settings debug bind port
+  if [[ "$env_name" == "dev" ]]; then
+    image="datascientest-django:static-gate"
+    settings="config.settings.dev"
+    debug="false"
+    bind="127.0.0.1"
+    port="8080"
+  else
+    image="registry.example.invalid/datascientest-django@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    settings="config.settings.$env_name"
+    debug="false"
+    bind="0.0.0.0"
+    port="80"
+  fi
+  cat > "$env_file" <<EOF
+APP_IMAGE=$image
+APPLICATION_ENV=$env_name
+APPLICATION_VERSION=0.0.0-static
+APPLICATION_COMMIT=STATIC_CHECK_ONLY_COMMIT
+DJANGO_SETTINGS_MODULE=$settings
+DJANGO_SECRET_KEY=STATIC_CHECK_ONLY_DJANGO_SECRET_KEY_0123456789abcdefghijklmnopqrstuvwxyzABCDEFG
+DJANGO_DEBUG=$debug
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,web,nginx
+DJANGO_CSRF_TRUSTED_ORIGINS=http://localhost
+DATABASE_URL=postgresql://django_app:STATIC_CHECK_ONLY_POSTGRES_1234567890abcdef@db:5432/django_app
+CELERY_BROKER_URL=redis://:STATIC_CHECK_ONLY_REDIS_1234567890abcdefghi@redis:6379/0
+CELERY_RESULT_BACKEND=redis://:STATIC_CHECK_ONLY_REDIS_1234567890abcdefghi@redis:6379/1
+POSTGRES_DB=django_app
+POSTGRES_USER=django_app
+POSTGRES_PASSWORD=STATIC_CHECK_ONLY_POSTGRES_1234567890abcdef
+REDIS_PASSWORD=STATIC_CHECK_ONLY_REDIS_1234567890abcdefghi
+NGINX_HTTP_BIND_ADDRESS=$bind
+NGINX_HTTP_PORT=$port
+EOF
+}
+
+for env_name in dev stg prod; do
+  env_file="$TMP_DIR/$env_name.env"
+  rendered="$TMP_DIR/compose-$env_name.yml"
+  write_compose_env "$env_name" "$env_file"
+  docker compose \
+    --env-file "$env_file" \
+    -f "$DOCKER_DIR/compose.yml" \
+    -f "$DOCKER_DIR/compose.$env_name.yml" \
+    config --quiet
+  docker compose \
+    --env-file "$env_file" \
+    -f "$DOCKER_DIR/compose.yml" \
+    -f "$DOCKER_DIR/compose.$env_name.yml" \
+    config > "$rendered"
+  python3 tests/validate_compose_config.py "$env_name" "$rendered"
+done
+pass "Compose config DEV/STG/PROD"
+
+echo "== Docker daemon config validation =="
+if command -v dockerd >/dev/null 2>&1; then
+  cat > "$TMP_DIR/daemon.json" <<'EOF'
+{
+  "live-restore": true,
+  "log-driver": "json-file",
+  "log-opts": {"max-size": "10m", "max-file": "3"},
+  "iptables": true,
+  "ip6tables": true,
+  "firewall-backend": "iptables"
+}
+EOF
+  dockerd --validate --config-file "$TMP_DIR/daemon.json"
+  pass "dockerd --validate"
 else
-  echo "SKIP: ansible-playbook is not installed; playbook syntax checks not executed."
+  echo "STATIC_GATE_SKIP: dockerd not available; daemon config runtime validation deferred"
 fi
 
-echo "All available static checks passed."
+echo "DC11_STATIC_GATE_PASS"

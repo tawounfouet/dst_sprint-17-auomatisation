@@ -20,7 +20,9 @@ ANSIBLE COMPOSE DEPLOY          ✅ IMPLEMENTED
 INVENTORIES DEV/STG/PROD        ✅ IMPLEMENTED
 SECURE RUNTIME CONFIGURATION    ✅ IMPLEMENTED
 RUNTIME HARDENING               ✅ IMPLEMENTED
-STATIC GATE                     ⏳
+UNIT TEST / STATIC GATE         ✅ IMPLEMENTED
+COMPOSE CONFIG VALIDATION       ✅ IMPLEMENTED
+DC-11 CI GREEN                  ⏳
 COMPOSE E2E                     ⏳
 STRICT IDEMPOTENCE              ⏳
 PACKAGE + SHA-256               ⏳
@@ -125,24 +127,7 @@ DOCKER-USER
 DST-COMPOSE-GUARD
 ```
 
-Le script firewall est idempotent et un drop-in systemd réapplique la politique après restart Docker.
-
-Côté Compose :
-
-```text
-no-new-privileges
-cap_drop ALL lorsque compatible
-read-only rootfs lorsque compatible
-tmpfs runtime
-init=true pour web/worker/beat
-CPU/RAM/PID limits
-json-file log rotation
-healthchecks renforcés
-restart unless-stopped
-SIGTERM + stop_grace_period
-frontend/backend segmentation
-backend internal=true
-```
+Côté Compose : `no-new-privileges`, `cap_drop`, rootfs read-only lorsque compatible, `tmpfs`, `init=true` pour les process applicatifs, limites CPU/RAM/PIDs, rotation des logs, healthchecks renforcés, restart/recovery et segmentation `frontend` / `backend`.
 
 Le contrat réseau reste :
 
@@ -154,6 +139,41 @@ STG/PROD: Nginx seulement sur :80 par défaut
 5432 PostgreSQL published=false
 6379 Redis      published=false
 ```
+
+## DC-11 — Static Gate
+
+Le gate canonique est :
+
+```bash
+cd ansible-project
+./tests/static_checks.sh
+```
+
+Il exécute désormais :
+
+```text
+secret hygiene repository
+Bash/Python/YAML syntax
+Django settings + DRF tests
+SQLite DEV-only negative policies
+Dockerfile non-root / SIGTERM checks
+six-service Compose structure
+runtime hardening checks
+Ansible syntax-check
+Docker Compose config DEV/STG/PROD
+validation du Compose rendu
+dockerd --validate lorsque disponible
+```
+
+Le validateur `tests/validate_compose_config.py` contrôle notamment le réseau `frontend/backend`, le `backend internal`, l'image commune `web/worker/beat`, l'absence de build STG/PROD, l'image digest-pinned, les ports non publiés `8000/5432/6379`, `read_only`, capabilities, resource limits, logging et healthchecks.
+
+Le workflow dédié est :
+
+```text
+.github/workflows/ansible-django-postgresql-redis-celery-docker-compose-static.yml
+```
+
+Son résultat réel doit être observé avant de marquer DC-11 GREEN.
 
 ## Roadmap
 
@@ -169,8 +189,8 @@ DC-07  Ansible docker_engine                                      ✅ IMPLEMENTE
 DC-08  Ansible compose_stack + inventories dev/stg/prod           ✅ IMPLEMENTED
 DC-09  Secure runtime configuration                               ✅ IMPLEMENTED
 DC-10  Runtime hardening                                          ✅ IMPLEMENTED
-DC-11  Unit tests + static gate                                   ⏭ NEXT
-DC-12  DEV Full E2E                                               ⏳
+DC-11  Unit tests + static gate + Compose validation              ✅ IMPLEMENTED / CI ⏳
+DC-12  DEV Full E2E                                               ⏭ NEXT after DC-11 GREEN
 DC-13  STG-like E2E + anti-SQLite tests                           ⏳
 DC-14  Strict idempotence                                         ⏳
 DC-15  Package + SHA-256 + artifact                               ⏳
