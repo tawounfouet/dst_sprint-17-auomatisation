@@ -1,11 +1,11 @@
 from unittest.mock import MagicMock, patch
 
-from django.test import SimpleTestCase
+from django.test import TestCase
 
 from tasks_demo.tasks import add, database_probe, periodic_heartbeat, uppercase
 
 
-class DemoTaskTests(SimpleTestCase):
+class DemoTaskTests(TestCase):
     def test_add_task(self):
         self.assertEqual(add.run(21, 21), 42)
 
