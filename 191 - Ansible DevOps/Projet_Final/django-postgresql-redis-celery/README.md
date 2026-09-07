@@ -13,7 +13,7 @@ ASYNC TASK API           ✅ IMPLEMENTED
 REDIS ROLE               ✅ IMPLEMENTED
 CELERY WORKER            ✅ IMPLEMENTED
 DJANGO CELERY BEAT       ✅ IMPLEMENTED
-GLOBAL ORCHESTRATION     ⏳
+GLOBAL ORCHESTRATION     ✅ IMPLEMENTED
 RUNTIME VALIDATION       ⏳
 E2E QUALIFICATION        ⏳
 IDEMPOTENCE              ⏳
@@ -21,13 +21,6 @@ PACKAGE / ARTIFACT       ⏳
 ```
 
 > La qualification GREEN du projet source n'est pas héritée. Cette variante devra produire son propre run E2E GREEN.
-
-## Baseline
-
-```text
-Source dossier : 191 - Ansible DevOps/Projet_Final/django-postgresql/
-Source snapshot : 22feae813b4e85df891304b596cfb07b8940081b
-```
 
 ## Architecture cible
 
@@ -57,7 +50,47 @@ Contrat réseau :
 6379  → localhost-only
 ```
 
-## Dépendances Python
+## Orchestration — RC-07
+
+Le `site.yml` orchestre désormais réellement les sept rôles dans cet ordre :
+
+```text
+common
+  ↓
+postgresql
+  ↓
+redis
+  ↓
+django_app
+  ↓
+celery
+  ↓
+celery_beat
+  ↓
+nginx
+```
+
+La topologie prod d'exemple est désormais explicitement mono-host : le même `server1` appartient aux groupes `app` et `database`, et `site.yml` refuse une topologie où les deux groupes pointent vers des hôtes différents.
+
+Les overrides mono-host imposent :
+
+```text
+PostgreSQL → 127.0.0.1:5432
+Redis      → 127.0.0.1:6379
+Gunicorn   → 127.0.0.1:8000
+```
+
+Les trois secrets attendus restent fournis par Ansible Vault :
+
+```text
+vault_postgresql_password
+vault_django_secret_key
+vault_redis_password
+```
+
+## Composants applicatifs
+
+Dépendances Python :
 
 ```text
 Django>=5.2,<5.3
@@ -68,9 +101,7 @@ redis>=6,<7
 django-celery-beat>=2.9,<3
 ```
 
-Le runtime conserve Python standard `venv` sous `.venv`.
-
-## Tâches de démonstration
+Tâches de démonstration :
 
 ```text
 add(21, 21)                 → 42
@@ -88,67 +119,15 @@ POST /api/tasks/database-probe/
 GET  /api/tasks/<task_id>/
 ```
 
-## Redis — RC-05
-
-Le rôle `redis` installe et configure `redis-server` en localhost-only avec `protected-mode yes`, authentification Vault et validation `PING → PONG`.
-
-## Celery Worker — RC-06
-
-Le rôle `celery` installe une unité systemd séparée :
+Services systemd cibles :
 
 ```text
-datascientest-celery.service
-```
-
-Le worker charge le même `EnvironmentFile` que Django et exécute :
-
-```text
-celery -A config worker --loglevel=INFO --concurrency=2
-```
-
-Il est redémarré lorsque le code Django, les dépendances, l'environnement ou l'unité systemd changent.
-
-## Django Celery Beat — RC-06B
-
-`django-celery-beat` est maintenant intégré avec :
-
-```text
-INSTALLED_APPS += django_celery_beat
-CELERY_BEAT_SCHEDULER = django_celery_beat.schedulers:DatabaseScheduler
-```
-
-Le rôle `celery_beat` installe :
-
-```text
-datascientest-celery-beat.service
-```
-
-Un management command idempotent enregistre la tâche périodique de laboratoire :
-
-```text
-python manage.py ensure_demo_periodic_task --seconds 30
-```
-
-nommée `datascientest-demo-heartbeat` et pointant vers `tasks_demo.periodic_heartbeat`.
-
-Le worker et Beat restent deux services distincts ; le projet n'utilise pas `celery worker -B`.
-
-## Rôles
-
-```text
-common
 postgresql
-redis
-django_app
-celery
-celery_beat
+redis-server
+datascientest-django
+datascientest-celery
+datascientest-celery-beat
 nginx
-```
-
-Ordre cible :
-
-```text
-common → postgresql → redis → django_app → celery → celery_beat → nginx
 ```
 
 ## Roadmap
@@ -162,8 +141,8 @@ RC-04   Tâches + API asynchrone            ✅
 RC-05   rôle Redis                         ✅ IMPLEMENTED
 RC-06   rôle Celery Worker                 ✅ IMPLEMENTED
 RC-06B  Django Celery Beat                 ✅ IMPLEMENTED
-RC-07   orchestration globale              ⏭ NEXT
-RC-08   runtime validation                 ⏳
+RC-07   orchestration globale              ✅ IMPLEMENTED
+RC-08   runtime validation                 ⏭ NEXT
 RC-09   static gate                        ⏳
 RC-10   qualification E2E                  ⏳
 RC-11   idempotence                        ⏳
