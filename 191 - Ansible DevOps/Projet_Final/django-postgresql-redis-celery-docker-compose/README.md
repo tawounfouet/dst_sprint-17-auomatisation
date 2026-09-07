@@ -24,7 +24,7 @@ SQLITE DEV-ONLY POLICY          ✅ IMPLEMENTED
 DJANGO REST FRAMEWORK           ✅ IMPLEMENTED
 12-FACTOR DOCKER IMAGE          ✅ IMPLEMENTED
 BASE DOCKER COMPOSE STACK       ✅ IMPLEMENTED
-MULTI-ENV COMPOSE               ⏳
+MULTI-ENV COMPOSE               ✅ IMPLEMENTED
 ANSIBLE DOCKER ENGINE           ⏳
 ANSIBLE COMPOSE DEPLOY          ⏳
 SECRETS / ENV INJECTION         ⏳
@@ -119,15 +119,19 @@ Une seule image est destinée aux trois process types :
 
 Les logs sont dirigés vers stdout/stderr, `SIGTERM` est le signal d'arrêt et les migrations/`collectstatic` restent des admin one-shot processes.
 
-## Base Docker Compose
+## Docker Compose multi-environnement
 
-Le fichier de base est :
+La stack est désormais structurée ainsi :
 
 ```text
-docker/compose.yml
+docker/
+├── compose.yml
+├── compose.dev.yml
+├── compose.stg.yml
+└── compose.prod.yml
 ```
 
-Services :
+`compose.yml` contient uniquement la topologie commune :
 
 ```text
 nginx
@@ -138,28 +142,80 @@ worker
 beat
 ```
 
-Architecture :
+Il ne publie plus de port hôte et ne construit plus l'image applicative. Les overlays portent la politique de release.
+
+### DEV Full
 
 ```text
-                    nginx :80
-                       │
-                       ▼
-                 web :8000
-              Django / DRF
-                 Gunicorn
-                 ┌────┴────┐
-                 ▼         ▼
-                db       redis
-           PostgreSQL   Redis + auth
-                 ▲         ▲
-                 │         │
-               worker     beat
-               Celery   Celery Beat
+compose.yml + compose.dev.yml
 ```
 
-`web`, `worker` et `beat` utilisent la même référence `APP_IMAGE` et le même build `django-app/Dockerfile`.
+Contrat :
 
-Persistance :
+```text
+APPLICATION_ENV=dev
+DJANGO_SETTINGS_MODULE=config.settings.dev
+DATABASE_URL obligatoire
+PostgreSQL obligatoire
+build local de l'image commune web/worker/beat
+Nginx → 127.0.0.1:8080 par défaut
+```
+
+SQLite reste réservé au DEV Lite hors Compose.
+
+### STG
+
+```text
+compose.yml + compose.stg.yml
+```
+
+Contrat :
+
+```text
+APPLICATION_ENV=stg
+DJANGO_SETTINGS_MODULE=config.settings.stg
+DJANGO_DEBUG=false
+APP_IMAGE obligatoire
+aucun build applicatif
+aucun bind mount code
+PostgreSQL strict
+```
+
+### PROD
+
+```text
+compose.yml + compose.prod.yml
+```
+
+Contrat :
+
+```text
+APPLICATION_ENV=prod
+DJANGO_SETTINGS_MODULE=config.settings.prod
+DJANGO_DEBUG=false
+APP_IMAGE obligatoire
+aucun build applicatif
+aucun bind mount code
+PostgreSQL strict
+```
+
+La cible de promotion est :
+
+```text
+CI build
+   ↓
+APP_IMAGE=registry/...@sha256:ABC
+   ↓
+STG qualifie sha256:ABC
+   ↓
+PROD réutilise sha256:ABC
+```
+
+La vérification stricte du format `@sha256:` sera ajoutée côté Ansible/static gate.
+
+## Persistance et healthchecks
+
+Volumes :
 
 ```text
 postgres_data
@@ -180,12 +236,6 @@ nginx  → GET /health/ via proxy
 
 La preuve fonctionnelle forte de Beat restera une exécution périodique réellement observée en E2E.
 
-## Redis
-
-Redis utilise une ACL générée au démarrage depuis `REDIS_PASSWORD`, avec fichier temporaire protégé par `umask 077`, `protected-mode yes` et AOF activé.
-
-Le healthcheck utilise `REDISCLI_AUTH`; `redis-cli -a` n'est pas utilisé.
-
 ## Contrat réseau cible
 
 Service discovery :
@@ -203,13 +253,13 @@ beat   → redis:6379
 Côté hôte :
 
 ```text
-80      published=true
+DEV Full : Nginx uniquement, 127.0.0.1:8080 par défaut
+STG/PROD: Nginx uniquement, :80 par défaut
+
 8000    published=false
 5432    published=false
 6379    published=false
 ```
-
-Seul `nginx` publie un port hôte dans le Compose de base.
 
 ## Ansible reste le plan de contrôle
 
@@ -234,8 +284,8 @@ DC-02  Django configuration foundation                            ✅ IMPLEMENTE
 DC-03  Django REST Framework                                      ✅ IMPLEMENTED
 DC-04  12-Factor Docker image                                     ✅ IMPLEMENTED
 DC-05  Base Docker Compose stack                                  ✅ IMPLEMENTED
-DC-06  Multi-environment Compose                                  ⏭ NEXT
-DC-07  Ansible docker_engine                                      ⏳
+DC-06  Multi-environment Compose                                  ✅ IMPLEMENTED
+DC-07  Ansible docker_engine                                      ⏭ NEXT
 DC-08  Ansible compose_stack + inventories dev/stg/prod           ⏳
 DC-09  Secure runtime configuration                               ⏳
 DC-10  Runtime hardening                                          ⏳
