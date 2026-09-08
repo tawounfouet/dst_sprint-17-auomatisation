@@ -4,3 +4,5 @@ vault_secret_generation: 1
 vault_postgresql_password: <SET_IN_ENCRYPTED_VAULT>
 vault_django_secret_key: <SET_IN_ENCRYPTED_VAULT>
 vault_redis_password: <SET_IN_ENCRYPTED_VAULT>
+vault_resend_api_key: <SET_IN_ENCRYPTED_VAULT_RESEND_API_KEY>
+vault_default_from_email: <SET_IN_ENCRYPTED_VAULT_FROM_ADDRESS>

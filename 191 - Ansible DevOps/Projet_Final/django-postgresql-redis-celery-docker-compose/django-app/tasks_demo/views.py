@@ -8,12 +8,20 @@ from rest_framework.response import Response
 
 from .serializers import (
     AddTaskSerializer,
+    EmailSubmissionSerializer,
     MediaUploadSerializer,
     TaskAcceptedSerializer,
     TaskStatusSerializer,
     UppercaseTaskSerializer,
 )
-from .tasks import add, database_probe, process_media_file, uppercase
+from .tasks import (
+    add,
+    check_incoming_emails_imap,
+    database_probe,
+    process_media_file,
+    send_email_async,
+    uppercase,
+)
 
 
 def _accepted(task_result):
@@ -107,4 +115,27 @@ def submit_media_upload(request):
     uploaded_file = request.FILES["file"]
     saved_path = default_storage.save(f"uploads/{uploaded_file.name}", uploaded_file)
     task_result = process_media_file.delay(saved_path)
+    return _accepted(task_result)
+
+
+@api_view(["POST"])
+def submit_email_task(request):
+    serializer = EmailSubmissionSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    task_result = send_email_async.delay(
+        to_email=data["to_email"],
+        subject=data["subject"],
+        message=data["message"],
+        from_email=data.get("from_email") or None,
+        attachment_paths=data.get("attachments") or None,
+    )
+    return _accepted(task_result)
+
+
+@api_view(["POST"])
+def trigger_imap_check(request):
+    task_result = check_incoming_emails_imap.delay()
     return _accepted(task_result)

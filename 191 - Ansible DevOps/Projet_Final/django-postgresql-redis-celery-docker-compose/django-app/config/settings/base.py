@@ -183,3 +183,12 @@ STORAGES = configure_storages(
     base_dir=BASE_DIR,
     environment_name=APPLICATION_ENV,
 )
+
+from .email import configure_email_settings  # noqa: E402
+
+EMAIL_CONFIG = configure_email_settings(
+    env=env,
+    environment_name=APPLICATION_ENV,
+)
+for _key, _val in EMAIL_CONFIG.items():
+    globals()[_key] = _val

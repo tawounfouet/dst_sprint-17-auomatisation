@@ -35,4 +35,16 @@ compose_stack_runtime_environment:
   AWS_S3_ADDRESSING_STYLE: auto
   NGINX_HTTP_BIND_ADDRESS: 0.0.0.0
   NGINX_HTTP_PORT: "80"
+  SMTP_HOST: smtp.resend.com
+  SMTP_PORT: "465"
+  SMTP_USER: resend
+  SMTP_PASSWORD: "{{ vault_resend_api_key | default(vault_smtp_password | default('')) }}"
+  SMTP_USE_TLS: "false"
+  SMTP_USE_SSL: "true"
+  DEFAULT_FROM_EMAIL: "{{ vault_default_from_email | default('notifications@example.com') }}"
+  IMAP_HOST: "{{ vault_imap_host | default('') }}"
+  IMAP_PORT: "{{ vault_imap_port | default('993') }}"
+  IMAP_USER: "{{ vault_imap_user | default('') }}"
+  IMAP_PASSWORD: "{{ vault_imap_password | default('') }}"
+  IMAP_USE_SSL: "true"
   DJANGO_LOG_LEVEL: INFO

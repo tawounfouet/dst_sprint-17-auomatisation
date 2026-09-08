@@ -37,4 +37,16 @@ compose_stack_runtime_environment:
   MINIO_ROOT_PASSWORD: "{{ vault_minio_root_password }}"
   NGINX_HTTP_BIND_ADDRESS: 0.0.0.0
   NGINX_HTTP_PORT: "80"
+  SMTP_HOST: smtp.gmail.com
+  SMTP_PORT: "587"
+  SMTP_USER: "{{ vault_smtp_user }}"
+  SMTP_PASSWORD: "{{ vault_smtp_password }}"
+  SMTP_USE_TLS: "true"
+  SMTP_USE_SSL: "false"
+  DEFAULT_FROM_EMAIL: "{{ vault_smtp_user }}"
+  IMAP_HOST: imap.gmail.com
+  IMAP_PORT: "993"
+  IMAP_USER: "{{ vault_smtp_user }}"
+  IMAP_PASSWORD: "{{ vault_smtp_password }}"
+  IMAP_USE_SSL: "true"
   DJANGO_LOG_LEVEL: INFO

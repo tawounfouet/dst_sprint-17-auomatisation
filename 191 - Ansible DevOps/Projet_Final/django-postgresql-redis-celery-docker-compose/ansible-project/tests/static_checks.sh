@@ -277,6 +277,9 @@ vault_minio_root_user: STATIC_CHECK_ONLY_MINIO_USER
 vault_minio_root_password: STATIC_CHECK_ONLY_MINIO_PASSWORD_123456789
 vault_aws_access_key_id: STATIC_CHECK_ONLY_AWS_KEY
 vault_aws_secret_access_key: STATIC_CHECK_ONLY_AWS_SECRET_1234567890abcdef
+vault_smtp_user: STATIC_CHECK_ONLY_SMTP_USER
+vault_smtp_password: STATIC_CHECK_ONLY_SMTP_PASSWORD_123456789
+vault_resend_api_key: STATIC_CHECK_ONLY_RESEND_KEY_123456789
 EOF
   CREATED_VAULTS+=("$vault")
 }

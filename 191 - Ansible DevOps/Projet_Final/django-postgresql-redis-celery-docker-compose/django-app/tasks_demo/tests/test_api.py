@@ -194,3 +194,52 @@ class TaskApiTests(SimpleTestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json(), {"error": "file_required"})
+
+    @patch("tasks_demo.views.send_email_async.delay")
+    def test_submit_email_task_success(self, delay):
+        delay.return_value = MagicMock(id="task-email-1", status="PENDING")
+
+        response = self.client.post(
+            "/api/tasks/send-email/",
+            {
+                "to_email": "hello@example.com",
+                "subject": "Test Notification",
+                "message": "This is a test notification.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(
+            response.json(),
+            {"task_id": "task-email-1", "status": "PENDING"},
+        )
+        delay.assert_called_once()
+        kwargs = delay.call_args[1]
+        self.assertEqual(kwargs["to_email"], "hello@example.com")
+        self.assertEqual(kwargs["subject"], "Test Notification")
+
+    def test_submit_email_task_requires_fields(self):
+        response = self.client.post(
+            "/api/tasks/send-email/",
+            {"subject": "Missing to_email and message"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    @patch("tasks_demo.views.check_incoming_emails_imap.delay")
+    def test_trigger_imap_check(self, delay):
+        delay.return_value = MagicMock(id="task-imap-1", status="PENDING")
+
+        response = self.client.post(
+            "/api/tasks/imap-check/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(
+            response.json(),
+            {"task_id": "task-imap-1", "status": "PENDING"},
+        )
+        delay.assert_called_once()

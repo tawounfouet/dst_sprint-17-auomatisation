@@ -52,3 +52,15 @@ class TaskStatusSerializer(serializers.Serializer):
 
 class MediaUploadSerializer(serializers.Serializer):
     file = serializers.FileField()
+
+
+class EmailSubmissionSerializer(serializers.Serializer):
+    to_email = serializers.EmailField()
+    subject = serializers.CharField(max_length=255)
+    message = serializers.CharField(max_length=10000)
+    from_email = serializers.EmailField(required=False, allow_blank=True)
+    attachments = serializers.ListField(
+        child=serializers.CharField(max_length=1024),
+        required=False,
+        default=list,
+    )

@@ -24,6 +24,9 @@ class SettingsRuntimePolicyTests(unittest.TestCase):
             "AWS_ACCESS_KEY_ID",
             "AWS_SECRET_ACCESS_KEY",
             "AWS_S3_ENDPOINT_URL",
+            "SMTP_HOST",
+            "SMTP_USER",
+            "SMTP_PASSWORD",
         ):
             env.pop(key, None)
 
@@ -41,6 +44,9 @@ class SettingsRuntimePolicyTests(unittest.TestCase):
                 "AWS_STORAGE_BUCKET_NAME": "canary-bucket",
                 "AWS_ACCESS_KEY_ID": "canary-access-key",
                 "AWS_SECRET_ACCESS_KEY": "canary-secret-key",
+                "SMTP_HOST": "smtp.canary.example.com",
+                "SMTP_USER": "canary_user",
+                "SMTP_PASSWORD": "canary_password",
             }
         )
         env.update(overrides)
@@ -148,6 +154,26 @@ class SettingsRuntimePolicyTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("USE_S3_STORAGE=false is forbidden in prod", result.stderr)
+
+    def test_staging_requires_smtp_host(self):
+        result = self._run_import(
+            "config.settings.stg",
+            "stg",
+            DATABASE_URL="postgresql://django_app:canary@db:5432/django_app",
+            SMTP_HOST="",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SMTP_HOST is mandatory", result.stderr)
+
+    def test_production_requires_smtp_password(self):
+        result = self._run_import(
+            "config.settings.prod",
+            "prod",
+            DATABASE_URL="postgresql://django_app:canary@db:5432/django_app",
+            SMTP_PASSWORD="",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SMTP_PASSWORD are mandatory", result.stderr)
 
 
 if __name__ == "__main__":
