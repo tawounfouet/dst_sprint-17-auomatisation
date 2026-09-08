@@ -7,6 +7,7 @@ x-default-logging: &default-logging
 x-app-service: &app-service
   image: ${APP_IMAGE:-datascientest-django:dev}
   environment: &app-environment
+    APPLICATION_NAME: ${APPLICATION_NAME:-dst-ansible-django}
     APPLICATION_ENV: ${APPLICATION_ENV:-dev}
     DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-config.settings.dev}
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}

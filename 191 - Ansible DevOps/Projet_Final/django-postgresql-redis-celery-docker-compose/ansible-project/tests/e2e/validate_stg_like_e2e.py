@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import time
 import urllib.error
@@ -110,7 +111,11 @@ def main() -> int:
 
     code, info = request_json(args.base_url, "/api/info/")
     require(code == 200, f"/api/info/ HTTP {code}")
-    require(info.get("application") == "datascientest-ansible-django", "application identity mismatch")
+    expected_app_name = os.environ.get("APPLICATION_NAME", "dst-ansible-django")
+    require(
+        info.get("application") == expected_app_name,
+        f"application identity mismatch: expected {expected_app_name}, got {info.get('application')}",
+    )
     require(info.get("runtime") == "gunicorn", "runtime mismatch")
     require(info.get("database") == "postgresql", "database identity mismatch")
     require(info.get("broker") == "redis", "broker identity mismatch")

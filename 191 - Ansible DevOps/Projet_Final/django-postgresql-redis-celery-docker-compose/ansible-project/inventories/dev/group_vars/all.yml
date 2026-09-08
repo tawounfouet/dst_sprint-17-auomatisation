@@ -1,5 +1,6 @@
 ---
 deployment_environment: dev
+application_name: dst-ansible-django
 app_image: datascientest-django:dev
 application_version: 0.0.0-dev
 application_commit: local
@@ -11,6 +12,7 @@ redis_result_database: 1
 
 compose_stack_runtime_environment:
   APP_IMAGE: "{{ app_image }}"
+  APPLICATION_NAME: "{{ application_name }}"
   APPLICATION_ENV: dev
   APPLICATION_VERSION: "{{ application_version }}"
   APPLICATION_COMMIT: "{{ application_commit }}"

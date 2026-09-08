@@ -11,7 +11,7 @@ from config.celery import app as celery_app
 def home(request):
     return JsonResponse(
         {
-            "application": "datascientest-ansible-django",
+            "application": getattr(settings, "APPLICATION_NAME", "dst-ansible-django"),
             "status": "running",
         }
     )
@@ -91,7 +91,7 @@ def celery_health(request):
 def info(request):
     return JsonResponse(
         {
-            "application": "datascientest-ansible-django",
+            "application": getattr(settings, "APPLICATION_NAME", "dst-ansible-django"),
             "runtime": "gunicorn",
             "database": "postgresql",
             "broker": "redis",

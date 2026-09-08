@@ -331,7 +331,7 @@
     - name: Assert application information payload
       ansible.builtin.assert:
         that:
-          - validate_http_info.json.application == 'datascientest-ansible-django'
+          - validate_http_info.json.application == (application_name | default('dst-ansible-django'))
           - validate_http_info.json.runtime == 'gunicorn'
           - validate_http_info.json.database == 'postgresql'
           - validate_http_info.json.broker == 'redis'

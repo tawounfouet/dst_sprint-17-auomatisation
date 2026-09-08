@@ -28,6 +28,7 @@ if APPLICATION_ENV != _settings_environment:
         f"({APPLICATION_ENV!r} != {_settings_environment!r})."
     )
 
+APPLICATION_NAME = env("APPLICATION_NAME", default="dst-ansible-django").strip()
 APPLICATION_VERSION = env("APPLICATION_VERSION", default="0.0.0-dev")
 APPLICATION_COMMIT = env("APPLICATION_COMMIT", default="local")
 

@@ -1,5 +1,6 @@
 ---
 deployment_environment: prod
+application_name: dst-ansible-django
 app_image: registry.example.com/datascientest-django@sha256:CHANGE_ME_WITH_64_HEX_DIGEST
 application_version: CHANGE_ME_VERSION
 application_commit: CHANGE_ME_COMMIT
@@ -11,6 +12,7 @@ redis_result_database: 1
 
 compose_stack_runtime_environment:
   APP_IMAGE: "{{ app_image }}"
+  APPLICATION_NAME: "{{ application_name }}"
   APPLICATION_ENV: prod
   APPLICATION_VERSION: "{{ application_version }}"
   APPLICATION_COMMIT: "{{ application_commit }}"

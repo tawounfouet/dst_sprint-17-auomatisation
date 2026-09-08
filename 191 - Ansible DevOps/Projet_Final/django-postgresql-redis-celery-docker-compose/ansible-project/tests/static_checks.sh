@@ -333,6 +333,7 @@ write_compose_env() {
   fi
   cat > "$env_file" <<EOF
 APP_IMAGE=$image
+APPLICATION_NAME=dst-ansible-django
 APPLICATION_ENV=$env_name
 APPLICATION_VERSION=0.0.0-static
 APPLICATION_COMMIT=STATIC_CHECK_ONLY_COMMIT

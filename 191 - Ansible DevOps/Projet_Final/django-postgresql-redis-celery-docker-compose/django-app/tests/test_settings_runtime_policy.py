@@ -12,6 +12,7 @@ class SettingsRuntimePolicyTests(unittest.TestCase):
     def _run_import(self, settings_module, application_env, **overrides):
         env = os.environ.copy()
         for key in (
+            "APPLICATION_NAME",
             "APPLICATION_ENV",
             "DJANGO_SETTINGS_MODULE",
             "DJANGO_SECRET_KEY",
@@ -174,6 +175,19 @@ class SettingsRuntimePolicyTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SMTP_PASSWORD are mandatory", result.stderr)
+
+    def test_application_name_default_and_override(self):
+        # Default dst-ansible-django
+        result_default = self._run_import("config.settings.dev", "dev")
+        self.assertEqual(result_default.returncode, 0)
+
+        # Explicit override
+        result_override = self._run_import(
+            "config.settings.dev",
+            "dev",
+            APPLICATION_NAME="mon-app-custom",
+        )
+        self.assertEqual(result_override.returncode, 0)
 
 
 if __name__ == "__main__":

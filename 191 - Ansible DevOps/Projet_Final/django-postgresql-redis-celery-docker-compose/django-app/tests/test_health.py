@@ -7,7 +7,7 @@ class HealthEndpointTests(TestCase):
     def test_home(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["application"], "datascientest-ansible-django")
+        self.assertEqual(response.json()["application"], "dst-ansible-django")
 
     def test_health(self):
         response = self.client.get("/health/")
@@ -90,7 +90,15 @@ class HealthEndpointTests(TestCase):
         response = self.client.get("/api/info/")
         self.assertEqual(response.status_code, 200)
         payload = response.json()
+        self.assertEqual(payload["application"], "dst-ansible-django")
         self.assertEqual(payload["database"], "postgresql")
         self.assertEqual(payload["broker"], "redis")
         self.assertEqual(payload["async_runtime"], "celery")
         self.assertEqual(payload["scheduler"], "django-celery-beat")
+
+    def test_custom_application_name_override(self):
+        with self.settings(APPLICATION_NAME="mon-app-custom"):
+            response = self.client.get("/")
+            self.assertEqual(response.json()["application"], "mon-app-custom")
+            response_info = self.client.get("/api/info/")
+            self.assertEqual(response_info.json()["application"], "mon-app-custom")

@@ -18,16 +18,18 @@ RUN python -m pip install \
 
 FROM ${PYTHON_IMAGE} AS runtime
 
+ARG APPLICATION_NAME=dst-ansible-django
 ARG APPLICATION_VERSION=0.0.0-dev
 ARG APPLICATION_COMMIT=local
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    APPLICATION_NAME=${APPLICATION_NAME} \
     APPLICATION_VERSION=${APPLICATION_VERSION} \
     APPLICATION_COMMIT=${APPLICATION_COMMIT}
 
-LABEL org.opencontainers.image.title="datascientest-django" \
+LABEL org.opencontainers.image.title="${APPLICATION_NAME}" \
       org.opencontainers.image.description="Django/DRF runtime shared by Gunicorn, Celery Worker and Celery Beat" \
       org.opencontainers.image.source="https://github.com/tawounfouet/dst_sprint-17-auomatisation" \
       org.opencontainers.image.version="${APPLICATION_VERSION}" \
