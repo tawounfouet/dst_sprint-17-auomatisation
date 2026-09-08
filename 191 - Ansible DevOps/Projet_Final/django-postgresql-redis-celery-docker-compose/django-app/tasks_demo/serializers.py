@@ -48,3 +48,7 @@ class TaskStatusSerializer(serializers.Serializer):
     status = serializers.CharField()
     result = serializers.JSONField(required=False)
     error = serializers.CharField(required=False)
+
+
+class MediaUploadSerializer(serializers.Serializer):
+    file = serializers.FileField()

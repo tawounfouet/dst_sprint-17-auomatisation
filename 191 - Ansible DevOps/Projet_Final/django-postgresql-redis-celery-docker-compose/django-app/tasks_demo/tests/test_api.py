@@ -161,3 +161,36 @@ class TaskApiTests(SimpleTestCase):
     def test_post_endpoint_rejects_get(self):
         response = self.client.get("/api/tasks/add/")
         self.assertEqual(response.status_code, 405)
+
+    @patch("tasks_demo.views.process_media_file.delay")
+    def test_submit_media_upload_success(self, delay):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        delay.return_value = MagicMock(id="task-media-1", status="PENDING")
+        uploaded_file = SimpleUploadedFile("sample.txt", b"Hello Antigravity MinIO!")
+
+        response = self.client.post(
+            "/api/tasks/media-upload/",
+            {"file": uploaded_file},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(
+            response.json(),
+            {"task_id": "task-media-1", "status": "PENDING"},
+        )
+        delay.assert_called_once()
+        args, _ = delay.call_args
+        self.assertTrue(args[0].startswith("uploads/sample"))
+        from django.core.files.storage import default_storage
+        default_storage.delete(args[0])
+
+    def test_submit_media_upload_requires_file(self):
+        response = self.client.post(
+            "/api/tasks/media-upload/",
+            {},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": "file_required"})

@@ -230,8 +230,10 @@ with open(path, encoding="utf-8") as handle:
     config = json.load(handle)
 services = config.get("services", {})
 expected_services = {"nginx", "web", "db", "redis", "worker", "beat"}
+if "minio" in services:
+    expected_services.update({"minio", "minio-create-bucket"})
 if set(services) != expected_services:
-    raise SystemExit("DC13_COMPOSE_FAIL: six-service set mismatch")
+    raise SystemExit("DC13_COMPOSE_FAIL: service set mismatch")
 for name in ("web", "worker", "beat"):
     service = services[name]
     if service.get("build"):

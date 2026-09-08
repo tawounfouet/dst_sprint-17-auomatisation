@@ -27,5 +27,13 @@ compose_stack_runtime_environment:
   POSTGRES_USER: "{{ postgresql_user }}"
   POSTGRES_PASSWORD: "{{ vault_postgresql_password }}"
   REDIS_PASSWORD: "{{ vault_redis_password }}"
+  USE_S3_STORAGE: "true"
+  AWS_STORAGE_BUCKET_NAME: dst-media
+  AWS_ACCESS_KEY_ID: "{{ vault_minio_root_user | default('minioadmin') }}"
+  AWS_SECRET_ACCESS_KEY: "{{ vault_minio_root_password | default(vault_postgresql_password) }}"
+  AWS_S3_ENDPOINT_URL: http://minio:9000
+  AWS_S3_ADDRESSING_STYLE: path
+  MINIO_ROOT_USER: "{{ vault_minio_root_user | default('minioadmin') }}"
+  MINIO_ROOT_PASSWORD: "{{ vault_minio_root_password | default(vault_postgresql_password) }}"
   NGINX_HTTP_PORT: "8080"
   DJANGO_LOG_LEVEL: DEBUG

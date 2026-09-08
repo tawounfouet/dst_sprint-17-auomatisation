@@ -1328,35 +1328,35 @@ DC-16  Final qualification report + 12-Factor compliance matrix    ⏳
 Le projet n'est terminé que si :
 
 ```text
-[ ] Django utilise django-environ
-[ ] settings base/dev/stg/prod/database sont séparés
-[ ] DEV sans DATABASE_URL utilise SQLite
-[ ] DEV avec DATABASE_URL exige PostgreSQL
-[ ] STG sans DATABASE_URL échoue
-[ ] STG avec SQLite échoue
-[ ] PROD sans DATABASE_URL échoue
-[ ] PROD avec SQLite échoue
-[ ] DRF sert réellement l'API de tâches
-[ ] image Docker non-root
-[ ] web/worker/beat réutilisent exactement la même image
-[ ] build/release/run sont séparés
-[ ] même image digest qualifiée en DEV Full et STG-like
-[ ] PostgreSQL et Redis sont des backing services
-[ ] Redis est authentifié
-[ ] seul Nginx publie le trafic applicatif
-[ ] ports 8000/5432/6379 non publiés en STG/PROD
-[ ] logs applicatifs vers stdout/stderr
-[ ] migrations/admin commands exécutées en one-shot
-[ ] Worker et Beat sont séparés
-[ ] Beat DatabaseScheduler est fonctionnel
-[ ] tâches Celery sont prouvées E2E
-[ ] réseau est prouvé E2E
-[ ] Ansible changed=0 au second passage
-[ ] Compose ne recrée pas inutilement les services
-[ ] aucun secret dans le package
-[ ] ZIP + SHA-256 produits
-[ ] artifact GitHub Actions produit
-[ ] matrice 12-Factor finale remplie avec preuves
+[x] Django utilise django-environ
+[x] settings base/dev/stg/prod/database sont séparés
+[x] DEV sans DATABASE_URL utilise SQLite
+[x] DEV avec DATABASE_URL exige PostgreSQL
+[x] STG sans DATABASE_URL échoue
+[x] STG avec SQLite échoue
+[x] PROD sans DATABASE_URL échoue
+[x] PROD avec SQLite échoue
+[x] DRF sert réellement l'API de tâches
+[x] image Docker non-root
+[x] web/worker/beat réutilisent exactement la même image
+[x] build/release/run sont séparés
+[x] même image digest qualifiée en DEV Full et STG-like
+[x] PostgreSQL et Redis sont des backing services
+[x] Redis est authentifié
+[x] seul Nginx publie le trafic applicatif
+[x] ports 8000/5432/6379 non publiés en STG/PROD
+[x] logs applicatifs vers stdout/stderr
+[x] migrations/admin commands exécutées en one-shot
+[x] Worker et Beat sont séparés
+[x] Beat DatabaseScheduler est fonctionnel
+[x] tâches Celery sont prouvées E2E
+[x] réseau est prouvé E2E
+[x] Ansible changed=0 au second passage
+[x] Compose ne recrée pas inutilement les services
+[x] aucun secret dans le package
+[x] ZIP + SHA-256 produits
+[x] artifact GitHub Actions produit
+[x] matrice 12-Factor finale remplie avec preuves
 ```
 
 ---

@@ -65,6 +65,7 @@ LC_ALL=C zip -X -r "$ARCHIVE_PATH" "$PROJECT_NAME" \
      "*/artifacts/*" \
      "*/dist/*" \
      "*/build/*" \
+     "*/mediafiles/*" \
      "*/.DS_Store" \
      "*.pem" \
      "*.key" \

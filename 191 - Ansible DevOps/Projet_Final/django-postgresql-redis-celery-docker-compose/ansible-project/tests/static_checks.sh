@@ -184,15 +184,17 @@ require("DJANGO_SECRET_KEY=" not in Dockerfile and "POSTGRES_PASSWORD=" not in D
 
 compose_raw = yaml.safe_load((docker / "compose.yml").read_text(encoding="utf-8"))
 services = compose_raw.get("services", {})
-require(set(services) == {"nginx", "web", "db", "redis", "worker", "beat"}, "base Compose must define six canonical services")
+require(set(services) == {"nginx", "web", "db", "redis", "worker", "beat", "minio", "minio-create-bucket"}, "base Compose must define expected services including minio")
 require(compose_raw.get("networks", {}).get("backend", {}).get("internal") is True, "backend network must be internal")
-for name in ("web", "db", "redis", "worker", "beat"):
+for name in ("web", "db", "redis", "worker", "beat", "minio"):
     require(not services[name].get("ports"), f"{name} must not publish ports in base Compose")
 for name in ("web", "worker", "beat", "redis", "nginx"):
     require(services[name].get("read_only") is True, f"{name} read_only hardening missing")
-for name in ("web", "worker", "beat", "redis", "nginx"):
+for name in ("web", "worker", "beat", "redis", "nginx", "minio"):
     require("ALL" in (services[name].get("cap_drop") or []), f"{name} cap_drop ALL missing")
 for name, service in services.items():
+    if name == "minio-create-bucket":
+        continue
     require(service.get("healthcheck"), f"{name} healthcheck missing")
     require(service.get("logging", {}).get("driver") == "json-file" or name in {"web", "worker", "beat"}, f"{name} json-file logging missing")
 
@@ -271,6 +273,10 @@ vault_secret_generation: 1
 vault_django_secret_key: STATIC_CHECK_ONLY_DJANGO_SECRET_KEY_0123456789abcdefghijklmnopqrstuvwxyzABCDEFG
 vault_postgresql_password: STATIC_CHECK_ONLY_POSTGRES_1234567890abcdef
 vault_redis_password: STATIC_CHECK_ONLY_REDIS_1234567890abcdefghi
+vault_minio_root_user: STATIC_CHECK_ONLY_MINIO_USER
+vault_minio_root_password: STATIC_CHECK_ONLY_MINIO_PASSWORD_123456789
+vault_aws_access_key_id: STATIC_CHECK_ONLY_AWS_KEY
+vault_aws_secret_access_key: STATIC_CHECK_ONLY_AWS_SECRET_1234567890abcdef
 EOF
   CREATED_VAULTS+=("$vault")
 }
@@ -295,7 +301,7 @@ for env_name in dev stg prod; do
     playbooks/site.yml \
     --syntax-check \
     -e "deployment_environment=$env_name" \
-    "${vault_args[@]}"
+    ${vault_args[@]+"${vault_args[@]}"}
 done
 ansible-playbook -i inventories/dev/hosts.example.yml playbooks/docker_engine.yml --syntax-check
 ansible-playbook -i inventories/dev/hosts.example.yml playbooks/runtime_hardening.yml --syntax-check -e deployment_environment=dev
@@ -341,6 +347,11 @@ POSTGRES_PASSWORD=STATIC_CHECK_ONLY_POSTGRES_1234567890abcdef
 REDIS_PASSWORD=STATIC_CHECK_ONLY_REDIS_1234567890abcdefghi
 NGINX_HTTP_BIND_ADDRESS=$bind
 NGINX_HTTP_PORT=$port
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=STATIC_CHECK_ONLY_MINIO_1234567890abcdef
+AWS_STORAGE_BUCKET_NAME=dst-media
+AWS_ACCESS_KEY_ID=STATIC_CHECK_ONLY_MINIO_KEY
+AWS_SECRET_ACCESS_KEY=STATIC_CHECK_ONLY_MINIO_SECRET
 EOF
 }
 

@@ -11,3 +11,4 @@
 *.key
 *.zip
 *.zip.sha256
+**/mediafiles/

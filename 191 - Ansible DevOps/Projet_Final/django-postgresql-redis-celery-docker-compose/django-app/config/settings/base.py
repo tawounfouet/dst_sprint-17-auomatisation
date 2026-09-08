@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "django_celery_beat",
+    "storages",
     "health.apps.HealthConfig",
     "tasks_demo.apps.TasksDemoConfig",
 ]
@@ -101,6 +102,8 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = env("MEDIA_URL", default="/media/")
+MEDIA_ROOT = BASE_DIR / "mediafiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # The demo task API intentionally preserves the baseline public/anonymous
@@ -172,3 +175,11 @@ LOGGING = {
         "level": env("DJANGO_LOG_LEVEL", default="INFO"),
     },
 }
+
+from .storage import configure_storages  # noqa: E402
+
+STORAGES = configure_storages(
+    env=env,
+    base_dir=BASE_DIR,
+    environment_name=APPLICATION_ENV,
+)

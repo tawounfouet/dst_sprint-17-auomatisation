@@ -30,8 +30,8 @@ ANTI-SQLITE RUNTIME STG         ✅ GREEN
 DC-13 CI GREEN                  ✅
 STRICT IDEMPOTENCE              ✅ GREEN
 DC-14 CI GREEN                  ✅
-PACKAGE + SHA-256               ⏭ NEXT
-FINAL REPORT                    ⏳
+PACKAGE + SHA-256               ✅ GREEN
+FINAL REPORT                    ✅ QUALIFIED
 ```
 
 Les statuts GREEN sont attribués uniquement aux gates réellement observés dans GitHub Actions. Les qualifications DEV Full, STG-like et Strict Idempotence utilisent des runners GitHub-hosted Ubuntu éphémères ; elles ne constituent pas encore une qualification d'un VPS SSH/production.
@@ -452,8 +452,8 @@ DC-11  Unit tests + static gate + Compose validation              ✅ GREEN
 DC-12  DEV Full E2E                                               ✅ GREEN
 DC-13  STG-like E2E + anti-SQLite runtime                         ✅ GREEN
 DC-14  Strict idempotence                                         ✅ GREEN
-DC-15  Package + SHA-256 + artifact                               ⏭ NEXT
-DC-16  Final qualification report + 12-Factor matrix              ⏳
+DC-15  Package + SHA-256 + artifact                               ✅ GREEN
+DC-16  Final qualification report + 12-Factor matrix              ✅ QUALIFIED
 ```
 
 Les preuves historiques de la baseline native ne qualifient pas cette variante Docker Compose. DC-11, DC-12, DC-13 et DC-14 constituent désormais ses qualifications propres et successives : statique/config, DEV Full runtime, STG-like runtime immuable, puis convergence stricte sans drift.

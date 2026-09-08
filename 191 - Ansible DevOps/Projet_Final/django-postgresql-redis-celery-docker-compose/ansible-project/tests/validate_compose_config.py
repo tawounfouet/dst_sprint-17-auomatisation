@@ -57,10 +57,19 @@ def validate(environment: str, config_path: Path) -> None:
     networks = config.get("networks") or {}
     volumes = config.get("volumes") or {}
 
-    require(set(services) == EXPECTED_SERVICES, "exactly six canonical services are required")
+    expected_services = (
+        EXPECTED_SERVICES if environment == "prod"
+        else EXPECTED_SERVICES | {"minio", "minio-create-bucket"}
+    )
+    require(set(services) == expected_services, f"services mismatch in {environment}")
     require("frontend" in networks and "backend" in networks, "frontend/backend networks are required")
     require(bool(networks["backend"].get("internal")), "backend network must be internal")
-    require({"postgres_data", "redis_data", "static_data"}.issubset(volumes), "named persistence volumes are missing")
+
+    expected_volumes = (
+        {"postgres_data", "redis_data", "static_data"} if environment == "prod"
+        else {"postgres_data", "redis_data", "static_data", "minio_data"}
+    )
+    require(expected_volumes.issubset(volumes), "named persistence volumes are missing")
 
     expected_networks = {
         "nginx": {"frontend"},
@@ -70,6 +79,11 @@ def validate(environment: str, config_path: Path) -> None:
         "worker": {"backend"},
         "beat": {"backend"},
     }
+    if "minio" in services:
+        expected_networks["minio"] = {"backend"}
+    if "minio-create-bucket" in services:
+        expected_networks["minio-create-bucket"] = {"backend"}
+
     for name, expected in expected_networks.items():
         require(network_names(services[name]) == expected, f"{name} network membership is invalid")
 
@@ -87,7 +101,12 @@ def validate(environment: str, config_path: Path) -> None:
         for name, service in services.items():
             require(not service.get("build"), f"{environment} must not build service {name}")
 
-    for name in NO_PUBLISHED_PORT_SERVICES:
+    no_published = set(NO_PUBLISHED_PORT_SERVICES)
+    if "minio" in services and environment != "dev":
+        no_published.add("minio")
+    if "minio-create-bucket" in services:
+        no_published.add("minio-create-bucket")
+    for name in no_published:
         require(not services[name].get("ports"), f"{name} must not publish host ports")
 
     nginx_ports = services["nginx"].get("ports") or []
@@ -129,6 +148,8 @@ def validate(environment: str, config_path: Path) -> None:
     require("NET_BIND_SERVICE" in (services["nginx"].get("cap_add") or []), "Nginx requires only explicit capabilities")
 
     for name, service in services.items():
+        if name == "minio-create-bucket":
+            continue
         require(service.get("restart") == "unless-stopped", f"{name} restart policy must be unless-stopped")
         require(bool(service.get("healthcheck")), f"{name} healthcheck is required")
         require(service.get("mem_limit") not in (None, ""), f"{name} memory limit is required")

@@ -19,6 +19,11 @@ class SettingsRuntimePolicyTests(unittest.TestCase):
             "DATABASE_URL",
             "CELERY_BROKER_URL",
             "CELERY_RESULT_BACKEND",
+            "USE_S3_STORAGE",
+            "AWS_STORAGE_BUCKET_NAME",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_S3_ENDPOINT_URL",
         ):
             env.pop(key, None)
 
@@ -33,6 +38,9 @@ class SettingsRuntimePolicyTests(unittest.TestCase):
                 "DJANGO_DEBUG": "false",
                 "CELERY_BROKER_URL": "redis://:canary@redis:6379/0",
                 "CELERY_RESULT_BACKEND": "redis://:canary@redis:6379/1",
+                "AWS_STORAGE_BUCKET_NAME": "canary-bucket",
+                "AWS_ACCESS_KEY_ID": "canary-access-key",
+                "AWS_SECRET_ACCESS_KEY": "canary-secret-key",
             }
         )
         env.update(overrides)
@@ -120,6 +128,26 @@ class SettingsRuntimePolicyTests(unittest.TestCase):
         self.assertIn("stg", result.stdout)
         self.assertIn("django.db.backends.postgresql", result.stdout)
         self.assertTrue(result.stdout.rstrip().endswith("False"))
+
+    def test_staging_requires_s3_bucket(self):
+        result = self._run_import(
+            "config.settings.stg",
+            "stg",
+            DATABASE_URL="postgresql://django_app:canary@db:5432/django_app",
+            AWS_STORAGE_BUCKET_NAME="",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("AWS_STORAGE_BUCKET_NAME is mandatory", result.stderr)
+
+    def test_production_rejects_use_s3_storage_false(self):
+        result = self._run_import(
+            "config.settings.prod",
+            "prod",
+            DATABASE_URL="postgresql://django_app:canary@db:5432/django_app",
+            USE_S3_STORAGE="false",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("USE_S3_STORAGE=false is forbidden in prod", result.stderr)
 
 
 if __name__ == "__main__":

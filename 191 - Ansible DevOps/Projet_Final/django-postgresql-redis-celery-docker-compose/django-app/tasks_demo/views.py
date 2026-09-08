@@ -1,16 +1,19 @@
 from celery.result import AsyncResult
+from django.core.files.storage import default_storage
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, parser_classes
 from rest_framework.exceptions import ParseError
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from .serializers import (
     AddTaskSerializer,
+    MediaUploadSerializer,
     TaskAcceptedSerializer,
     TaskStatusSerializer,
     UppercaseTaskSerializer,
 )
-from .tasks import add, database_probe, uppercase
+from .tasks import add, database_probe, process_media_file, uppercase
 
 
 def _accepted(task_result):
@@ -90,3 +93,18 @@ def task_status(request, task_id):
 
     response = TaskStatusSerializer(payload)
     return Response(response.data, status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@parser_classes([MultiPartParser, FormParser])
+def submit_media_upload(request):
+    if "file" not in request.FILES:
+        return Response(
+            {"error": "file_required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    uploaded_file = request.FILES["file"]
+    saved_path = default_storage.save(f"uploads/{uploaded_file.name}", uploaded_file)
+    task_result = process_media_file.delay(saved_path)
+    return _accepted(task_result)
